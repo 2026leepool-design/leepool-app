@@ -1,0 +1,27 @@
+{
+  "common": {
+    "appName": "LeePool",
+    "loading": "Yükleniyor...",
+    "error": "Bir hata oluştu",
+    "save": "Kaydet",
+    "cancel": "İptal",
+    "confirm": "Onayla"
+  },
+  "auth": {
+    "login": "Giriş",
+    "logout": "Çıkış",
+    "register": "Kayıt"
+  },
+  "library": {
+    "title": "Kütüphane",
+    "empty": "Henüz kitap yok"
+  },
+  "market": {
+    "title": "Pazar",
+    "empty": "Ürün bulunamadı"
+  },
+  "stats": {
+    "title": "İstatistikler",
+    "empty": "Veri yok"
+  }
+}

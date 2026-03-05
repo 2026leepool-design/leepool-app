@@ -1,0 +1,27 @@
+{
+  "common": {
+    "appName": "LeePool",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "register": "Register"
+  },
+  "library": {
+    "title": "Library",
+    "empty": "No books yet"
+  },
+  "market": {
+    "title": "Market",
+    "empty": "No products found"
+  },
+  "stats": {
+    "title": "Statistics",
+    "empty": "No data"
+  }
+}
