@@ -1,33 +1,112 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
+import { Platform, View } from 'react-native';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function TabsLayout() {
+  const { t } = useTranslation();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-        tabBarButton: HapticTab,
+        tabBarStyle: {
+          backgroundColor: '#0A0F1A',
+          borderTopColor: 'rgba(0, 229, 255, 0.15)',
+          borderTopWidth: 1,
+          height: Platform.OS === 'ios' ? 80 : 64,
+          paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+          paddingTop: 8,
+          elevation: 0,
+          shadowOpacity: 0,
+        },
+        tabBarActiveTintColor: '#00E5FF',
+        tabBarInactiveTintColor: '#3A4560',
+        tabBarLabelStyle: {
+          fontFamily: 'SpaceGrotesk_600SemiBold',
+          fontSize: 9,
+          letterSpacing: 1.2,
+          textTransform: 'uppercase',
+        },
+        tabBarBackground: () => (
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: '#0A0F1A',
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(0, 229, 255, 0.15)',
+            }}
+          />
+        ),
       }}>
       <Tabs.Screen
-        name="index"
+        name="dashboard"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          tabBarLabel: t('dashboard'),
+          tabBarIcon: ({ color, size, focused }) => (
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: focused ? 'rgba(0, 229, 255, 0.12)' : 'transparent',
+              }}>
+              <Ionicons
+                name={focused ? 'grid' : 'grid-outline'}
+                size={size}
+                color={color}
+              />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="library"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          tabBarLabel: t('tabLibrary'),
+          tabBarIcon: ({ color, size, focused }) => (
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: focused ? 'rgba(0, 229, 255, 0.12)' : 'transparent',
+              }}>
+              <Ionicons
+                name={focused ? 'book' : 'book-outline'}
+                size={size}
+                color={color}
+              />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="market"
+        options={{
+          tabBarLabel: t('tabMarket'),
+          tabBarIcon: ({ color, size, focused }) => (
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: focused ? 'rgba(0, 255, 157, 0.10)' : 'transparent',
+              }}>
+              <Ionicons
+                name={focused ? 'storefront' : 'storefront-outline'}
+                size={size}
+                color={focused ? '#00FF9D' : color}
+              />
+            </View>
+          ),
+          tabBarActiveTintColor: '#00FF9D',
         }}
       />
     </Tabs>
