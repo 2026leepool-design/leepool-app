@@ -51,6 +51,8 @@ export async function generateBookSynopsis(
       data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
     if (text) {
       text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) text = jsonMatch[0].trim();
     }
     return text;
   } catch (error) {

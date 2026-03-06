@@ -1,9 +1,11 @@
 import { useState, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import QRCode from 'react-native-qrcode-svg';
 import { supabase } from '@/utils/supabase';
 import { loadKeys, generateAndSaveKeys, deleteKeys, type NostrKeys } from '@/utils/nostr';
 
@@ -94,6 +96,8 @@ export default function DashboardScreen() {
   const [nostrKeys, setNostrKeys] = useState<NostrKeys | null>(null);
   const [nostrLoading, setNostrLoading] = useState(true);
   const [nostrActionLoading, setNostrActionLoading] = useState(false);
+  const [isQrVisible, setIsQrVisible] = useState(false);
+  const [userName, setUserName] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -121,11 +125,26 @@ export default function DashboardScreen() {
           if (isMounted) setLoading(false);
         }
       }
+      async function loadUser() {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (isMounted && user) {
+            setUserName(user.email?.split('@')[0] || t('user'));
+          }
+        } catch {
+          // fail silently
+        }
+      }
       async function loadNostrKeys() {
         setNostrLoading(true);
         try {
           const keys = await loadKeys();
-          if (isMounted) setNostrKeys(keys);
+          if (isMounted) {
+            setNostrKeys(keys);
+            if (!userName && keys) {
+              setUserName(`Cyber-${truncateNpub(keys.npub).replace('npub1', '').slice(0, 6)}`);
+            }
+          }
         } catch {
           if (isMounted) setNostrKeys(null);
         } finally {
@@ -133,10 +152,32 @@ export default function DashboardScreen() {
         }
       }
       loadStats();
+      loadUser();
       loadNostrKeys();
       return () => { isMounted = false; };
-    }, [])
+    }, [t])
   );
+
+  const handleSignOut = async () => {
+    Alert.alert(t('confirm'), t('signOutConfirm'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('signOut'),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await Promise.all([
+              supabase.auth.signOut(),
+              deleteKeys(),
+            ]);
+            router.replace('/login');
+          } catch (err: any) {
+            Alert.alert(t('error'), err.message);
+          }
+        },
+      },
+    ]);
+  };
 
   const handleGenerateIdentity = async () => {
     setNostrActionLoading(true);
@@ -183,15 +224,22 @@ export default function DashboardScreen() {
         {/* ── Header row ── */}
         <View className="flex-row items-center justify-between py-4">
           <View>
+            <View className="flex-row items-center gap-2">
+              <Text
+                className="text-[#00E5FF] text-xl tracking-[0.2em]"
+                style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                LEEPOOL
+              </Text>
+              <TouchableOpacity
+                onPress={handleSignOut}
+                className="w-8 h-8 rounded-lg items-center justify-center bg-red-500/10 border border-red-500/20">
+                <Ionicons name="log-out-outline" size={16} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
             <Text
-              className="text-[#00E5FF] text-xl tracking-[0.2em]"
-              style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-              LEEPOOL
-            </Text>
-            <Text
-              className="text-[#4A5568] text-[10px] tracking-widest"
-              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              {t('management')}
+              className="text-[#8892B0] text-[10px] tracking-widest mt-1"
+              style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
+              {userName ? `${t('welcome')}, ${userName}` : t('management')}
             </Text>
           </View>
           <View className="flex-row gap-2">
@@ -320,6 +368,47 @@ export default function DashboardScreen() {
                 style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
                 {truncateNpub(nostrKeys.npub)}
               </Text>
+
+              {/* ── Copy & QR row ── */}
+              <View className="flex-row gap-3 mb-3">
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={async () => {
+                    await Clipboard.setStringAsync(nostrKeys.npub);
+                    Alert.alert(t('success'), t('npubCopied'));
+                  }}
+                  className="flex-row items-center gap-2 rounded-xl px-4 py-2.5"
+                  style={{
+                    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(0, 229, 255, 0.3)',
+                  }}>
+                  <Ionicons name="copy-outline" size={16} color="#00E5FF" />
+                  <Text
+                    className="text-xs tracking-widest"
+                    style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#00E5FF' }}>
+                    {t('copy')}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={() => setIsQrVisible(true)}
+                  className="flex-row items-center gap-2 rounded-xl px-4 py-2.5"
+                  style={{
+                    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(0, 229, 255, 0.3)',
+                  }}>
+                  <Ionicons name="qr-code-outline" size={16} color="#00E5FF" />
+                  <Text
+                    className="text-xs tracking-widest"
+                    style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#00E5FF' }}>
+                    QR
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity
                 onPress={handleDeleteIdentity}
                 disabled={nostrActionLoading}
@@ -382,6 +471,91 @@ export default function DashboardScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* ── QR Modal ── */}
+      <Modal
+        visible={isQrVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setIsQrVisible(false)}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.88)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 32,
+          }}>
+          <View
+            style={{
+              backgroundColor: '#0D1525',
+              borderRadius: 24,
+              padding: 32,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(0, 229, 255, 0.25)',
+              shadowColor: '#00E5FF',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0.25,
+              shadowRadius: 24,
+              elevation: 12,
+            }}>
+            {/* Label */}
+            <Text
+              className="text-[10px] tracking-[0.3em] mb-5"
+              style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#8892B0' }}>
+              {t('nostrIdentityLabel').toUpperCase()}
+            </Text>
+
+            {/* QR Code */}
+            <View
+              style={{
+                padding: 16,
+                backgroundColor: '#0B0E14',
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: 'rgba(0, 229, 255, 0.2)',
+              }}>
+              <QRCode
+                value={nostrKeys?.npub || ''}
+                size={220}
+                color="#00E5FF"
+                backgroundColor="#0B0E14"
+              />
+            </View>
+
+            {/* Truncated npub below QR */}
+            <Text
+              className="text-[11px] mt-4 mb-6"
+              style={{
+                fontFamily: 'SpaceGrotesk_500Medium',
+                color: '#4A5568',
+                letterSpacing: 1,
+              }}>
+              {nostrKeys ? truncateNpub(nostrKeys.npub) : ''}
+            </Text>
+
+            {/* Close button */}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setIsQrVisible(false)}
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                borderWidth: 1,
+                borderColor: 'rgba(239, 68, 68, 0.4)',
+                borderRadius: 12,
+                paddingVertical: 12,
+                paddingHorizontal: 40,
+              }}>
+              <Text
+                className="text-sm tracking-widest"
+                style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#EF4444' }}>
+                {t('close').toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

@@ -44,10 +44,14 @@ function getSynopsisForLanguage(
   lang: string
 ): string {
   if (!iaSynopsis?.trim()) return '';
+  let raw = iaSynopsis.trim();
+  raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) raw = jsonMatch[0];
   try {
-    const parsed = JSON.parse(iaSynopsis) as Record<string, string>;
+    const parsed = JSON.parse(raw) as Record<string, string>;
     const code = lang.split('-')[0];
-    return parsed[code] ?? parsed.en ?? parsed.tr ?? parsed.es ?? iaSynopsis;
+    return parsed[code] ?? parsed.en ?? parsed.tr ?? parsed.es ?? '';
   } catch {
     return iaSynopsis;
   }
@@ -326,7 +330,7 @@ export default function SynopsisScreen() {
                   <TouchableOpacity
                     activeOpacity={0.8}
                     onPress={() =>
-                      Alert.alert('Şifreli Kanal', 'Yakında NIP-04 ile şifreli sohbet başlayacak.')
+                      router.push({ pathname: '/chat', params: { pubkey: book.seller_npub! } })
                     }
                     className="flex-row items-center gap-2 mt-3 self-start rounded-xl py-2.5 px-4"
                     style={{

@@ -49,6 +49,7 @@ export default function RootLayout() {
           animation: 'fade',
         }}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="login" options={{ animation: 'fade' }} />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="add-book"
@@ -62,6 +63,7 @@ export default function RootLayout() {
           name="synopsis"
           options={{ presentation: 'modal', headerShown: false }}
         />
+        <Stack.Screen name="chat" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(library)" />
         <Stack.Screen name="(market)" />

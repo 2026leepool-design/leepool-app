@@ -44,10 +44,14 @@ function getSynopsisForLanguage(
   lang: string
 ): string {
   if (!iaSynopsis?.trim()) return '';
+  let raw = iaSynopsis.trim();
+  raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) raw = jsonMatch[0];
   try {
-    const parsed = JSON.parse(iaSynopsis) as Record<string, string>;
+    const parsed = JSON.parse(raw) as Record<string, string>;
     const code = lang.split('-')[0];
-    return parsed[code] ?? parsed.en ?? parsed.tr ?? parsed.es ?? iaSynopsis;
+    return parsed[code] ?? parsed.en ?? parsed.tr ?? parsed.es ?? '';
   } catch {
     return iaSynopsis;
   }
