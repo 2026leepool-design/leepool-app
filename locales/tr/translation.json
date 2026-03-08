@@ -137,5 +137,6 @@
   "newPasswordPlaceholder": "Yeni şifreni gir",
   "passwordTooShort": "Şifre en az 6 karakter olmalıdır.",
   "passwordUpdated": "Şifre başarıyla güncellendi.",
-  "updatePassword": "Şifreyi Güncelle"
+  "updatePassword": "Şifreyi Güncelle",
+  "nsecPlaceholder": "nsec1 ile başlayan gizli anahtarınız..."
 }

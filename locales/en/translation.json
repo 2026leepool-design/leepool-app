@@ -137,5 +137,6 @@
   "newPasswordPlaceholder": "Enter new password",
   "passwordTooShort": "Password must be at least 6 characters.",
   "passwordUpdated": "Password updated successfully.",
-  "updatePassword": "Update Password"
+  "updatePassword": "Update Password",
+  "nsecPlaceholder": "Your secret key starting with nsec1..."
 }

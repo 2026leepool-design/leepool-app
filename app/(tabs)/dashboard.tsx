@@ -1,15 +1,15 @@
-import { useState, useCallback, useRef } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Alert, Animated, Platform, Image } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
-import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { deleteKeys, generateAndSaveKeys, importNsecKey, loadKeys, type NostrKeys } from '@/utils/nostr';
+import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ActivityIndicator, Alert, Animated, Image, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
+import { BarChart, LineChart } from 'react-native-gifted-charts';
 import QRCode from 'react-native-qrcode-svg';
-import { LineChart, BarChart } from 'react-native-gifted-charts';
-import { supabase } from '@/utils/supabase';
-import { loadKeys, generateAndSaveKeys, deleteKeys, type NostrKeys } from '@/utils/nostr';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,6 +117,7 @@ export default function DashboardScreen() {
   const [nostrActionLoading, setNostrActionLoading] = useState(false);
   const [isQrVisible, setIsQrVisible] = useState(false);
   const [isExportModalVisible, setIsExportModalVisible] = useState(false);
+  const [importNsec, setImportNsec] = useState('');
   const [userName, setUserName] = useState<string | null>(null);
   const nostrSwipeableRef = useRef<Swipeable>(null);
 
@@ -318,6 +319,36 @@ export default function DashboardScreen() {
       setNostrKeys(keys);
     } catch {
       // silently fail
+    } finally {
+      setNostrActionLoading(false);
+    }
+  };
+
+  const handleImportIdentity = async () => {
+    const text = importNsec.trim();
+    if (!text) {
+      const msg = t('fillAllFields');
+      if (Platform.OS === 'web') {
+        (window as any).alert(msg);
+      } else {
+        Alert.alert(t('error'), msg);
+      }
+      return;
+    }
+
+    setNostrActionLoading(true);
+    try {
+      const keys = await importNsecKey(text);
+      setNostrKeys(keys);
+      setImportNsec('');
+      setUserName(`Cyber-${truncateNpub(keys.npub).replace('npub1', '').slice(0, 6)}`);
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      if (Platform.OS === 'web') {
+        (window as any).alert(msg);
+      } else {
+        Alert.alert(t('error'), msg);
+      }
     } finally {
       setNostrActionLoading(false);
     }
@@ -608,6 +639,57 @@ export default function DashboardScreen() {
                 style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
                 {t('nostrConnectTitle')}
               </Text>
+
+              {/* Import nsec */}
+              <View className="mb-4 gap-3">
+                <TextInput
+                  className="rounded-xl px-4 py-3 text-sm"
+                  style={{
+                    backgroundColor: '#0A0F1A',
+                    borderWidth: 1,
+                    borderColor: 'rgba(167, 139, 250, 0.3)',
+                    fontFamily: 'SpaceGrotesk_400Regular',
+                    color: '#A78BFA',
+                  }}
+                  placeholderTextColor="#4A5568"
+                  placeholder={t('nsecPlaceholder')}
+                  value={importNsec}
+                  onChangeText={setImportNsec}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                />
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={handleImportIdentity}
+                  disabled={nostrActionLoading}
+                  className="rounded-xl py-3 items-center justify-center"
+                  style={{
+                    backgroundColor: 'rgba(167, 139, 250, 0.12)',
+                    borderWidth: 1,
+                    borderColor: '#A78BFA',
+                  }}>
+                  {nostrActionLoading ? (
+                    <ActivityIndicator size="small" color="#A78BFA" />
+                  ) : (
+                    <Text
+                      className="text-xs tracking-[0.1em]"
+                      style={{
+                        fontFamily: 'SpaceGrotesk_700Bold',
+                        color: '#E879F9',
+                      }}>
+                      {t('importKey').toUpperCase()}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <View className="flex-row items-center gap-2 mb-4">
+                <View className="flex-1 h-[1px] bg-white/5" />
+                <Text className="text-[10px] text-[#4A5568] uppercase tracking-widest">{t('orDivider')}</Text>
+                <View className="flex-1 h-[1px] bg-white/5" />
+              </View>
+
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={handleGenerateIdentity}
