@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -47,6 +48,14 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
 
   const peerNpubTrimmed = peerNpub?.trim() || '';
+
+  // Scroll to bottom when keyboard opens so the input stays visible
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (!peerNpubTrimmed) {
@@ -212,33 +221,33 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
-      {/* Header */}
-      <View
-        className="flex-row items-center px-4 py-3 border-b"
-        style={{
-          backgroundColor: '#0A0F1A',
-          borderColor: 'rgba(0, 229, 255, 0.15)',
-        }}>
-        <TouchableOpacity onPress={() => router.back()} className="mr-3 p-1">
-          <Ionicons name="arrow-back" size={24} color="#00E5FF" />
-        </TouchableOpacity>
-        <Text
-          className="text-[#00E5FF] text-sm flex-1"
-          style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
-          numberOfLines={1}>
-          {truncateNpub(peerNpubTrimmed)} {t('chatWith')}
-        </Text>
-      </View>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
+        {/* Header */}
+        <View
+          className="flex-row items-center px-4 py-3 border-b"
+          style={{
+            backgroundColor: '#0A0F1A',
+            borderColor: 'rgba(0, 229, 255, 0.15)',
+          }}>
+          <TouchableOpacity onPress={() => router.back()} className="mr-3 p-1">
+            <Ionicons name="arrow-back" size={24} color="#00E5FF" />
+          </TouchableOpacity>
+          <Text
+            className="text-[#00E5FF] text-sm flex-1"
+            style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
+            numberOfLines={1}>
+            {truncateNpub(peerNpubTrimmed)} {t('chatWith')}
+          </Text>
+        </View>
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
         <FlatList
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
+          style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, paddingBottom: 8 }}
           onContentSizeChange={() =>
             flatListRef.current?.scrollToEnd({ animated: true })
@@ -323,7 +332,7 @@ export default function ChatScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }

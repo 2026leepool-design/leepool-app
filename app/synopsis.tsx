@@ -9,6 +9,8 @@ import {
   Modal,
   Switch,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -255,33 +257,37 @@ export default function SynopsisScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
-      {/* ── Back Button ── */}
-      <View className="px-5 py-3">
-        <TouchableOpacity
-          onPress={() => router.back()}
-          className="flex-row items-center rounded-xl py-2 pr-4 self-start"
-          style={{
-            backgroundColor: '#131B2B',
-            borderWidth: 1,
-            borderColor: 'rgba(0, 229, 255, 0.2)',
-          }}>
-          <View className="pl-3 pr-1">
-            <Ionicons name="arrow-back" size={22} color="#00E5FF" />
-          </View>
-          <Text
-            className="text-[#00E5FF] text-sm tracking-widest"
-            style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-            {t('back')}
-          </Text>
-        </TouchableOpacity>
-      </View>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
+        {/* ── Back Button ── */}
+        <View className="px-5 py-3">
+          <TouchableOpacity
+            onPress={() => router.back()}
+            className="flex-row items-center rounded-xl py-2 pr-4 self-start"
+            style={{
+              backgroundColor: '#131B2B',
+              borderWidth: 1,
+              borderColor: 'rgba(0, 229, 255, 0.2)',
+            }}>
+            <View className="pl-3 pr-1">
+              <Ionicons name="arrow-back" size={22} color="#00E5FF" />
+            </View>
+            <Text
+              className="text-[#00E5FF] text-sm tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+              {t('back')}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}>
-        {/* ── Top: Cover + Info ── */}
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
+          {/* ── Top: Cover + Info ── */}
         <View
           className="flex-row items-start gap-4 rounded-2xl p-4 mb-4"
           style={{
@@ -600,44 +606,45 @@ export default function SynopsisScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </ScrollView>
+        </ScrollView>
 
-      {/* ── Full Screen Cover Modal ── */}
-      <Modal
-        visible={coverExpanded}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCoverExpanded(false)}>
-        <TouchableOpacity
-          activeOpacity={1}
-          className="flex-1 justify-center items-center"
-          style={{ backgroundColor: 'rgba(0,0,0,0.92)' }}
-          onPress={() => setCoverExpanded(false)}>
-          <View className="flex-1 w-full justify-center items-center px-4">
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={(e) => e.stopPropagation()}
-              style={{ maxWidth: '100%', maxHeight: '80%' }}>
-              <Image
-                source={{ uri: book.cover_url ?? undefined }}
-                style={{ width: 280, height: 400 }}
-                contentFit="contain"
-              />
-            </TouchableOpacity>
-          </View>
+        {/* ── Full Screen Cover Modal ── */}
+        <Modal
+          visible={coverExpanded}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCoverExpanded(false)}>
           <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => setCoverExpanded(false)}
-            className="absolute top-14 right-5 w-12 h-12 rounded-full items-center justify-center"
-            style={{
-              backgroundColor: 'rgba(0, 229, 255, 0.15)',
-              borderWidth: 1,
-              borderColor: '#00E5FF',
-            }}>
-            <Ionicons name="close" size={24} color="#00E5FF" />
+            activeOpacity={1}
+            className="flex-1 justify-center items-center"
+            style={{ backgroundColor: 'rgba(0,0,0,0.92)' }}
+            onPress={() => setCoverExpanded(false)}>
+            <View className="flex-1 w-full justify-center items-center px-4">
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={(e) => e.stopPropagation()}
+                style={{ maxWidth: '100%', maxHeight: '80%' }}>
+                <Image
+                  source={{ uri: book.cover_url ?? undefined }}
+                  style={{ width: 280, height: 400 }}
+                  contentFit="contain"
+                />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setCoverExpanded(false)}
+              className="absolute top-14 right-5 w-12 h-12 rounded-full items-center justify-center"
+              style={{
+                backgroundColor: 'rgba(0, 229, 255, 0.15)',
+                borderWidth: 1,
+                borderColor: '#00E5FF',
+              }}>
+              <Ionicons name="close" size={24} color="#00E5FF" />
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-    </SafeAreaView>
+        </Modal>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }

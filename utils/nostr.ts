@@ -13,6 +13,7 @@ export type NostrKeys = {
   privateKey: Uint8Array;
   publicKey: string;
   npub: string;
+  nsec: string;
 };
 
 /**
@@ -27,7 +28,7 @@ export async function generateAndSaveKeys(): Promise<NostrKeys> {
   await SecureStore.setItemAsync(KEY_PRIVATE, nsec);
   await SecureStore.setItemAsync(KEY_PUBLIC, npub);
 
-  return { privateKey: sk, publicKey: pk, npub };
+  return { privateKey: sk, publicKey: pk, npub, nsec };
 }
 
 /**
@@ -50,7 +51,7 @@ export async function loadKeys(): Promise<NostrKeys | null> {
     const privateKey = decodedNsec.data;
     const publicKey = decodedNpub.data;
 
-    return { privateKey, publicKey, npub };
+    return { privateKey, publicKey, npub, nsec };
   } catch {
     return null;
   }
@@ -73,7 +74,7 @@ export async function importNsecKey(nsecRaw: string): Promise<NostrKeys> {
   await SecureStore.setItemAsync(KEY_PRIVATE, nsec);
   await SecureStore.setItemAsync(KEY_PUBLIC, npub);
 
-  return { privateKey: sk, publicKey: pk, npub };
+  return { privateKey: sk, publicKey: pk, npub, nsec };
 }
 
 /**

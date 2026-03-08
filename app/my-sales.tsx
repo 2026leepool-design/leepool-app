@@ -45,12 +45,10 @@ function MarketCard({
   book,
   t,
   onPress,
-  isOwnBook,
 }: {
   book: MarketBook;
   t: (key: string) => string;
   onPress: () => void;
-  isOwnBook?: boolean;
 }) {
   const condLabel = book.condition
     ? t(`condition${book.condition.charAt(0).toUpperCase() + book.condition.slice(1)}` as 'conditionNew' | 'conditionGood' | 'conditionWorn')
@@ -64,7 +62,7 @@ function MarketCard({
       style={{
         backgroundColor: '#131B2B',
         borderWidth: 1,
-        borderColor: isOwnBook ? 'rgba(0, 229, 255, 0.5)' : 'rgba(255, 255, 255, 0.1)',
+        borderColor: 'rgba(0, 229, 255, 0.5)',
       }}>
       {/* Cover */}
       <View
@@ -93,16 +91,6 @@ function MarketCard({
             style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
             {book.author.toUpperCase()}
           </Text>
-          {book.seller_npub ? (
-            <Text
-              className="text-[#4A5568] text-[10px] mt-1"
-              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}
-              numberOfLines={1}>
-              {book.seller_npub.length <= 28
-                ? book.seller_npub
-                : `${book.seller_npub.slice(0, 12)}...${book.seller_npub.slice(-12)}`}
-            </Text>
-          ) : null}
           {book.first_publish_year ? (
             <Text
               className="text-[#4A5568] text-[10px] mt-1"
@@ -145,15 +133,14 @@ function MarketCard({
   );
 }
 
-// ─── MarketTabScreen ──────────────────────────────────────────────────────────
+// ─── MySalesScreen ────────────────────────────────────────────────────────────
 
-export default function MarketTabScreen() {
+export default function MySalesScreen() {
   const { t } = useTranslation();
   const router = useRouter();
 
   const [books, setBooks] = useState<MarketBook[]>([]);
   const [loading, setLoading] = useState(true);
-  const [myNpub, setMyNpub] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -161,19 +148,22 @@ export default function MarketTabScreen() {
       async function loadMarket() {
         setLoading(true);
         try {
-          const [booksRes, keys] = await Promise.all([
-            supabase
-              .from('books')
-              .select('id, title, author, cover_url, price_sats, condition, isbn, translator, first_publish_year, created_at, seller_npub')
-              .eq('is_for_sale', true)
-              .order('created_at', { ascending: false }),
-            loadKeys(),
-          ]);
-          const { data, error } = booksRes;
+          const keys = await loadKeys();
+          if (!keys?.npub) {
+            if (isMounted) setBooks([]);
+            return;
+          }
+
+          const { data, error } = await supabase
+            .from('books')
+            .select('id, title, author, cover_url, price_sats, condition, isbn, translator, first_publish_year, created_at, seller_npub')
+            .eq('is_for_sale', true)
+            .eq('seller_npub', keys.npub)
+            .order('created_at', { ascending: false });
+
           if (error) throw error;
           if (!isMounted) return;
           setBooks((data ?? []) as MarketBook[]);
-          if (keys?.npub) setMyNpub(keys.npub);
         } catch {
           // silently fail
         } finally {
@@ -188,37 +178,31 @@ export default function MarketTabScreen() {
   return (
     <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
       {/* Header */}
-      <View className="px-5 py-4">
-        <View className="flex-row items-center justify-between mb-1">
+      <View className="px-5 py-4 flex-row items-center justify-between">
+        <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 items-center justify-center bg-[#131B2B] rounded-full border border-white/10">
+          <Ionicons name="arrow-back" size={20} color="#00E5FF" />
+        </TouchableOpacity>
+        <View className="items-center flex-1">
           <Text
-            className="text-[#00FF9D] text-xl tracking-[0.2em]"
+            className="text-[#00E5FF] text-lg tracking-[0.1em]"
             style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-            {t('p2pMarket')}
+            {t('myActiveSales')}
           </Text>
-          <View
-            className="flex-row items-center gap-1 px-3 py-1 rounded-full"
-            style={{ backgroundColor: 'rgba(0, 255, 157, 0.1)', borderWidth: 1, borderColor: 'rgba(0, 255, 157, 0.3)' }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#00FF9D' }} />
-            <Text
-              className="text-[#00FF9D] text-[10px] tracking-widest"
-              style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              LIVE
-            </Text>
-          </View>
+          <Text
+            className="text-[#4A5568] text-[10px] tracking-widest mt-1"
+            style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+            {books.length} {t('books')} · ⚡ Bitcoin Sats
+          </Text>
         </View>
-        <Text
-          className="text-[#4A5568] text-xs tracking-widest"
-          style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-          {books.length} {t('books')} · ⚡ Bitcoin Sats
-        </Text>
+        <View className="w-10" />
       </View>
 
       {/* Divider */}
-      <View style={{ height: 1, backgroundColor: 'rgba(0, 255, 157, 0.1)', marginHorizontal: 20, marginBottom: 16 }} />
+      <View style={{ height: 1, backgroundColor: 'rgba(0, 229, 255, 0.1)', marginHorizontal: 20, marginBottom: 16 }} />
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#00FF9D" />
+          <ActivityIndicator size="large" color="#00E5FF" />
         </View>
       ) : (
         <FlatList
@@ -230,25 +214,19 @@ export default function MarketTabScreen() {
               book={item}
               t={t}
               onPress={() => router.push({ pathname: '/synopsis', params: { id: item.id } })}
-              isOwnBook={!!myNpub && !!item.seller_npub && item.seller_npub === myNpub}
             />
           )}
           ListEmptyComponent={
             <View className="items-center py-16">
               <View
                 className="w-20 h-20 rounded-2xl items-center justify-center mb-6"
-                style={{ backgroundColor: 'rgba(0, 255, 157, 0.06)', borderWidth: 1, borderColor: 'rgba(0, 255, 157, 0.15)' }}>
-                <Ionicons name="storefront-outline" size={36} color="#00FF9D" />
+                style={{ backgroundColor: 'rgba(0, 229, 255, 0.06)', borderWidth: 1, borderColor: 'rgba(0, 229, 255, 0.15)' }}>
+                <Ionicons name="cart-outline" size={36} color="#00E5FF" />
               </View>
               <Text
                 className="text-[#8892B0] text-sm text-center tracking-wide mb-2"
                 style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                {t('tabMarket')}
-              </Text>
-              <Text
-                className="text-[#4A5568] text-xs text-center"
-                style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-                {t('noBooksYet')}
+                {t('noSalesYet')}
               </Text>
             </View>
           }

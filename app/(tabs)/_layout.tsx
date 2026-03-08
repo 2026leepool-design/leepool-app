@@ -109,6 +109,30 @@ export default function TabsLayout() {
           tabBarActiveTintColor: '#00FF9D',
         }}
       />
+      <Tabs.Screen
+        name="messages"
+        options={{
+          tabBarLabel: t('tabMessages'),
+          tabBarIcon: ({ color, size, focused }) => (
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: focused ? 'rgba(168, 85, 247, 0.12)' : 'transparent',
+              }}>
+              <Ionicons
+                name={focused ? 'chatbubbles' : 'chatbubbles-outline'}
+                size={size}
+                color={focused ? '#A855F7' : color}
+              />
+            </View>
+          ),
+          tabBarActiveTintColor: '#A855F7',
+        }}
+      />
     </Tabs>
   );
 }

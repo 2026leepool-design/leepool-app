@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -347,25 +349,28 @@ export default function EditBookScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
-      {/* ── Back button (top left) ── */}
-      <View className="px-5 py-3">
-        <TouchableOpacity
-          onPress={() => router.back()}
-          className="w-10 h-10 rounded-xl items-center justify-center self-start"
-          style={{
-            backgroundColor: '#131B2B',
-            borderWidth: 1,
-            borderColor: 'rgba(0, 229, 255, 0.2)',
-          }}>
-          <Ionicons name="arrow-back" size={22} color="#00E5FF" />
-        </TouchableOpacity>
-      </View>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
+        {/* ── Back button (top left) ── */}
+        <View className="px-5 py-3">
+          <TouchableOpacity
+            onPress={() => router.back()}
+            className="w-10 h-10 rounded-xl items-center justify-center self-start"
+            style={{
+              backgroundColor: '#131B2B',
+              borderWidth: 1,
+              borderColor: 'rgba(0, 229, 255, 0.2)',
+            }}>
+            <Ionicons name="arrow-back" size={22} color="#00E5FF" />
+          </TouchableOpacity>
+        </View>
 
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        keyboardShouldPersistTaps="handled">
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled">
         {/* ── Header + Cover ── */}
         <View className="py-2 items-center">
           <Text
@@ -635,9 +640,9 @@ export default function EditBookScreen() {
             {saving ? '...' : t('update')}
           </Text>
         </TouchableOpacity>
-      </ScrollView>
+        </ScrollView>
 
-      {/* ── Author Books Fallback Modal ── */}
+        {/* ── Author Books Fallback Modal ── */}
       <Modal
         visible={isAuthorModalVisible}
         transparent
@@ -780,6 +785,7 @@ export default function EditBookScreen() {
           </TouchableOpacity>
         </View>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
