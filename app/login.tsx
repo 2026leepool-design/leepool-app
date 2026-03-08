@@ -9,6 +9,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -137,15 +138,24 @@ export default function LoginScreen() {
   // ─── Nostr Import ────────────────────────────────────────────────────────────
   const handleImportNsec = async () => {
     if (!nsecInput.trim()) {
-      Alert.alert(t('error'), t('fillAllFields'));
+      if (Platform.OS === 'web') {
+        window.alert(t('fillAllFields'));
+      } else {
+        Alert.alert(t('error'), t('fillAllFields'));
+      }
       return;
     }
     setWeb3Loading(true);
     try {
       await importNsecKey(nsecInput.trim());
-      navigateIn();
+      router.replace('/(tabs)/dashboard');
     } catch (err: any) {
-      Alert.alert(t('error'), err.message ?? String(err));
+      const msg = err.message ?? String(err);
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert(t('error'), msg);
+      }
     } finally {
       setWeb3Loading(false);
     }
@@ -156,9 +166,14 @@ export default function LoginScreen() {
     setGenerateLoading(true);
     try {
       await generateAndSaveKeys();
-      navigateIn();
+      router.replace('/(tabs)/dashboard');
     } catch (err: any) {
-      Alert.alert(t('error'), err.message ?? String(err));
+      const msg = err.message ?? String(err);
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert(t('error'), msg);
+      }
     } finally {
       setGenerateLoading(false);
     }
@@ -178,10 +193,10 @@ export default function LoginScreen() {
           <View style={{ alignItems: 'center', marginBottom: 40 }}>
             <View
               style={{
-                width: 80,
-                height: 80,
-                borderRadius: 20,
-                backgroundColor: 'rgba(0, 229, 255, 0.10)',
+                width: 88,
+                height: 88,
+                borderRadius: 22,
+                backgroundColor: 'rgba(0, 229, 255, 0.08)',
                 borderWidth: 1,
                 borderColor: '#00E5FF',
                 alignItems: 'center',
@@ -189,11 +204,16 @@ export default function LoginScreen() {
                 marginBottom: 16,
                 shadowColor: '#00E5FF',
                 shadowOffset: { width: 0, height: 0 },
-                shadowOpacity: 0.4,
-                shadowRadius: 20,
+                shadowOpacity: 0.45,
+                shadowRadius: 22,
                 elevation: 8,
+                overflow: 'hidden',
               }}>
-              <Text style={{ fontSize: 36 }}>📚</Text>
+              <Image
+                source={require('../assets/images/android-icon-foreground.png')}
+                style={{ width: 88, height: 88 }}
+                resizeMode="cover"
+              />
             </View>
             <Text
               style={{

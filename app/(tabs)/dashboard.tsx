@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Alert, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Alert, Animated, Platform, Image } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -285,20 +285,29 @@ export default function DashboardScreen() {
   );
 
   const handleSignOut = async () => {
+    const doSignOut = async () => {
+      try {
+        await supabase.auth.signOut();
+        try { await deleteKeys(); } catch {}
+        router.replace('/login');
+      } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        if (Platform.OS === 'web') {
+          (window as any).alert(msg);
+        } else {
+          Alert.alert(t('error'), msg);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if ((window as any).confirm(t('signOutConfirm'))) await doSignOut();
+      return;
+    }
+
     Alert.alert(t('confirm'), t('signOutConfirm'), [
       { text: t('cancel'), style: 'cancel' },
-      {
-        text: t('signOut'),
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await supabase.auth.signOut();
-            router.replace('/login');
-          } catch (err: any) {
-            Alert.alert(t('error'), err.message);
-          }
-        },
-      },
+      { text: t('signOut'), style: 'destructive', onPress: doSignOut },
     ]);
   };
 
@@ -361,6 +370,11 @@ export default function DashboardScreen() {
         <View className="flex-row items-center justify-between py-4">
           <View>
             <View className="flex-row items-center gap-2">
+              <Image
+                source={require('../../assets/images/favicon.png')}
+                style={{ width: 22, height: 22, borderRadius: 6 }}
+                resizeMode="contain"
+              />
               <Text
                 className="text-[#00E5FF] text-xl tracking-[0.2em]"
                 style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
@@ -368,8 +382,17 @@ export default function DashboardScreen() {
               </Text>
               <TouchableOpacity
                 onPress={handleSignOut}
-                className="w-8 h-8 rounded-lg items-center justify-center bg-red-500/10 border border-red-500/20">
-                <Ionicons name="log-out-outline" size={16} color="#EF4444" />
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(255, 0, 60, 0.12)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 0, 60, 0.35)',
+                }}>
+                <Ionicons name="log-out-outline" size={16} color="#FF003C" />
               </TouchableOpacity>
             </View>
             <TouchableOpacity onPress={() => router.push('/profile')} activeOpacity={0.7}>

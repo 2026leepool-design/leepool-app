@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import { generateSecretKey, getPublicKey, finalizeEvent } from 'nostr-tools/pure';
 import * as nip19 from 'nostr-tools/nip19';
 import * as nip04 from 'nostr-tools/nip04';
@@ -17,7 +18,7 @@ export type NostrKeys = {
 };
 
 /**
- * Generates a new Nostr keypair, derives npub, and saves both to SecureStore.
+ * Generates a new Nostr keypair, derives npub, and saves both to storage.
  */
 export async function generateAndSaveKeys(): Promise<NostrKeys> {
   const sk = generateSecretKey();
@@ -25,19 +26,32 @@ export async function generateAndSaveKeys(): Promise<NostrKeys> {
   const npub = nip19.npubEncode(pk);
   const nsec = nip19.nsecEncode(sk);
 
-  await SecureStore.setItemAsync(KEY_PRIVATE, nsec);
-  await SecureStore.setItemAsync(KEY_PUBLIC, npub);
+  if (Platform.OS === 'web') {
+    localStorage.setItem(KEY_PRIVATE, nsec);
+    localStorage.setItem(KEY_PUBLIC, npub);
+  } else {
+    await SecureStore.setItemAsync(KEY_PRIVATE, nsec);
+    await SecureStore.setItemAsync(KEY_PUBLIC, npub);
+  }
 
   return { privateKey: sk, publicKey: pk, npub, nsec };
 }
 
 /**
- * Loads stored Nostr keys from SecureStore.
+ * Loads stored Nostr keys from storage.
  * Returns { privateKey, publicKey, npub } or null if not found.
  */
 export async function loadKeys(): Promise<NostrKeys | null> {
-  const nsec = await SecureStore.getItemAsync(KEY_PRIVATE);
-  const npub = await SecureStore.getItemAsync(KEY_PUBLIC);
+  let nsec: string | null = null;
+  let npub: string | null = null;
+
+  if (Platform.OS === 'web') {
+    nsec = localStorage.getItem(KEY_PRIVATE);
+    npub = localStorage.getItem(KEY_PUBLIC);
+  } else {
+    nsec = await SecureStore.getItemAsync(KEY_PRIVATE);
+    npub = await SecureStore.getItemAsync(KEY_PUBLIC);
+  }
 
   if (!nsec || !npub) return null;
 
@@ -48,8 +62,8 @@ export async function loadKeys(): Promise<NostrKeys | null> {
     const decodedNpub = nip19.decode(npub);
     if (decodedNpub.type !== 'npub') return null;
 
-    const privateKey = decodedNsec.data;
-    const publicKey = decodedNpub.data;
+    const privateKey = decodedNsec.data as Uint8Array;
+    const publicKey = decodedNpub.data as string;
 
     return { privateKey, publicKey, npub, nsec };
   } catch {
@@ -58,7 +72,7 @@ export async function loadKeys(): Promise<NostrKeys | null> {
 }
 
 /**
- * Imports an nsec private key, derives the public key (npub), and saves both to SecureStore.
+ * Imports an nsec private key, derives the public key (npub), and saves both to storage.
  * @param nsecRaw - Raw nsec1... string
  */
 export async function importNsecKey(nsecRaw: string): Promise<NostrKeys> {
@@ -71,8 +85,13 @@ export async function importNsecKey(nsecRaw: string): Promise<NostrKeys> {
   const npub = nip19.npubEncode(pk);
   const nsec = nip19.nsecEncode(sk);
 
-  await SecureStore.setItemAsync(KEY_PRIVATE, nsec);
-  await SecureStore.setItemAsync(KEY_PUBLIC, npub);
+  if (Platform.OS === 'web') {
+    localStorage.setItem(KEY_PRIVATE, nsec);
+    localStorage.setItem(KEY_PUBLIC, npub);
+  } else {
+    await SecureStore.setItemAsync(KEY_PRIVATE, nsec);
+    await SecureStore.setItemAsync(KEY_PUBLIC, npub);
+  }
 
   return { privateKey: sk, publicKey: pk, npub, nsec };
 }
@@ -110,9 +129,14 @@ export async function sendEncryptedMessage(
 }
 
 /**
- * Deletes stored Nostr keys from the device.
+ * Deletes stored Nostr keys from the storage.
  */
 export async function deleteKeys(): Promise<void> {
-  await SecureStore.deleteItemAsync(KEY_PRIVATE);
-  await SecureStore.deleteItemAsync(KEY_PUBLIC);
+  if (Platform.OS === 'web') {
+    localStorage.removeItem(KEY_PRIVATE);
+    localStorage.removeItem(KEY_PUBLIC);
+  } else {
+    await SecureStore.deleteItemAsync(KEY_PRIVATE);
+    await SecureStore.deleteItemAsync(KEY_PUBLIC);
+  }
 }
