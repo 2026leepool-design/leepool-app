@@ -388,10 +388,13 @@ export default function LibraryTabScreen() {
       async function loadBooks() {
         setLoading(true);
         try {
-          const { data, error } = await supabase
+          const { data: { user } } = await supabase.auth.getUser();
+          const query = supabase
             .from('books')
             .select('id, title, author, total_pages, read_pages, current_value, ia_synopsis, status, cover_url, isbn, is_for_sale, price_sats, translated_titles, created_at')
             .order('created_at', { ascending: false });
+          if (user?.id) query.eq('user_id', user.id);
+          const { data, error } = await query;
           if (error) throw error;
           if (!isMounted) return;
           setBooks((data ?? []) as Book[]);

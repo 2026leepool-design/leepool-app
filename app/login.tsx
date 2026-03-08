@@ -17,6 +17,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
 import { generateAndSaveKeys, importNsecKey } from '@/utils/nostr';
 
+const LANGUAGES = [
+  { code: 'tr', flag: '🇹🇷' },
+  { code: 'en', flag: '🇺🇸' },
+  { code: 'es', flag: '🇪🇸' },
+];
+
 type Tab = 'classic' | 'web3';
 
 function CyberInput({
@@ -70,7 +76,7 @@ function CyberInput({
 }
 
 export default function LoginScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('classic');
 
@@ -211,6 +217,32 @@ export default function LoginScreen() {
               }}>
               {t('management')}
             </Text>
+          </View>
+
+          {/* ── Language Picker ── */}
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: 24 }}>
+            {LANGUAGES.map((lang) => (
+              <TouchableOpacity
+                key={lang.code}
+                onPress={() => i18n.changeLanguage(lang.code)}
+                activeOpacity={0.8}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: i18n.language.startsWith(lang.code)
+                    ? 'rgba(0, 229, 255, 0.15)'
+                    : '#131B2B',
+                  borderWidth: 1,
+                  borderColor: i18n.language.startsWith(lang.code)
+                    ? '#00E5FF'
+                    : 'rgba(136, 146, 176, 0.2)',
+                }}>
+                <Text style={{ fontSize: 18 }}>{lang.flag}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           {/* ── Tab Switcher ── */}

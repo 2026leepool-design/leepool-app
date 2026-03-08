@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
 import { generateBookSynopsis } from '@/utils/gemini';
 import { loadKeys } from '@/utils/nostr';
+import { payLightningInvoice } from '@/utils/lightning';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type BookData = {
@@ -37,6 +38,7 @@ type BookData = {
   price_sats: number | null;
   condition: string | null;
   seller_npub: string | null;
+  lightning_address: string | null;
 };
 
 type ConditionOption = 'new' | 'good' | 'worn';
@@ -74,6 +76,9 @@ export default function SynopsisScreen() {
   const [savingListing, setSavingListing] = useState(false);
   const [focusSats, setFocusSats] = useState(false);
   const [myNpub, setMyNpub] = useState<string | null>(null);
+  const [isLightningModalVisible, setIsLightningModalVisible] = useState(false);
+  const [lightningAmount, setLightningAmount] = useState('1000');
+  const [lightningPaying, setLightningPaying] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -172,11 +177,36 @@ export default function SynopsisScreen() {
   const truncateNpub = (npub: string) =>
     npub.length <= 28 ? npub : `${npub.slice(0, 12)}...${npub.slice(-12)}`;
 
+  const isOwnBook = !book?.seller_npub || book.seller_npub === myNpub;
+
   const showMessageSeller =
     book?.is_for_sale &&
     !!book?.seller_npub &&
     !!myNpub &&
     book.seller_npub !== myNpub;
+
+  const showBuyLightning =
+    book?.is_for_sale &&
+    !!book?.lightning_address?.trim() &&
+    !!myNpub &&
+    !!book?.seller_npub &&
+    book.seller_npub !== myNpub;
+
+  const handleLightningPay = useCallback(async () => {
+    if (!book?.lightning_address?.trim()) return;
+    const sats = parseInt(lightningAmount, 10);
+    if (isNaN(sats) || sats < 1) {
+      Alert.alert(t('error'), t('lightningAmountInvalid'));
+      return;
+    }
+    setIsLightningModalVisible(false);
+    setLightningPaying(true);
+    try {
+      await payLightningInvoice(book.lightning_address.trim(), sats, `${book.title} - LeePool`);
+    } finally {
+      setLightningPaying(false);
+    }
+  }, [book?.lightning_address, book?.title, lightningAmount, t]);
 
   const handleRegenerate = useCallback(async () => {
     if (!id || !book?.title || !book?.author) return;
@@ -332,26 +362,51 @@ export default function SynopsisScreen() {
                     {t('forSale')} · {book.price_sats ? `${book.price_sats.toLocaleString()} sats` : '—'}
                   </Text>
                 </View>
-                {showMessageSeller && (
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() =>
-                      router.push({ pathname: '/chat', params: { pubkey: book.seller_npub! } })
-                    }
-                    className="flex-row items-center gap-2 mt-3 self-start rounded-xl py-2.5 px-4"
-                    style={{
-                      backgroundColor: 'rgba(168, 85, 247, 0.15)',
-                      borderWidth: 1,
-                      borderColor: '#A855F7',
-                    }}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={18} color="#E879F9" />
-                    <Text
-                      className="text-sm tracking-widest"
-                      style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#E879F9' }}>
-                      {t('messageSeller')}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+                <View className="flex-row flex-wrap gap-2 mt-3">
+                  {showMessageSeller && (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() =>
+                        router.push({ pathname: '/chat', params: { pubkey: book.seller_npub! } })
+                      }
+                      className="flex-row items-center gap-2 rounded-xl py-2.5 px-4"
+                      style={{
+                        backgroundColor: 'rgba(168, 85, 247, 0.15)',
+                        borderWidth: 1,
+                        borderColor: '#A855F7',
+                      }}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={18} color="#E879F9" />
+                      <Text
+                        className="text-sm tracking-widest"
+                        style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#E879F9' }}>
+                        {t('messageSeller')}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {showBuyLightning && (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => setIsLightningModalVisible(true)}
+                      disabled={lightningPaying}
+                      className="flex-row items-center gap-2 rounded-xl py-2.5 px-4"
+                      style={{
+                        backgroundColor: 'rgba(255, 215, 0, 0.15)',
+                        borderWidth: 1,
+                        borderColor: '#FFD700',
+                      }}>
+                      {lightningPaying ? (
+                        <ActivityIndicator size="small" color="#FFD700" />
+                      ) : (
+                        <Text style={{ fontSize: 14 }}>⚡</Text>
+                      )}
+                      <Text
+                        className="text-sm tracking-widest"
+                        style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#FFD700' }}>
+                        {t('buyWithLightning')}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             )}
             <Text
@@ -481,7 +536,7 @@ export default function SynopsisScreen() {
         </View>
 
         {/* ── P2P Market Settings ── */}
-        <View className="mb-6">
+        {isOwnBook && <View className="mb-6">
           {/* Cyberpunk divider */}
           <View className="flex-row items-center gap-3 mb-5">
             <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(0, 255, 157, 0.25)' }} />
@@ -605,7 +660,7 @@ export default function SynopsisScreen() {
               </Text>
             )}
           </TouchableOpacity>
-        </View>
+        </View>}
         </ScrollView>
 
         {/* ── Full Screen Cover Modal ── */}
@@ -643,6 +698,90 @@ export default function SynopsisScreen() {
               <Ionicons name="close" size={24} color="#00E5FF" />
             </TouchableOpacity>
           </TouchableOpacity>
+        </Modal>
+
+        {/* ── Lightning Pay Modal ── */}
+        <Modal
+          visible={isLightningModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsLightningModalVisible(false)}>
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0, 0, 0, 0.85)',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: 24,
+            }}>
+            <View
+              style={{
+                width: '90%',
+                backgroundColor: '#0B0E14',
+                borderRadius: 20,
+                padding: 24,
+                borderWidth: 1,
+                borderColor: 'rgba(255, 215, 0, 0.3)',
+              }}>
+              <Text
+                className="text-[#FFD700] text-base mb-4 tracking-widest"
+                style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                ⚡ {t('lightningAmountPrompt')}
+              </Text>
+              <TextInput
+                className="rounded-xl px-4 py-4 text-base mb-4"
+                style={{
+                  backgroundColor: '#131B2B',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 215, 0, 0.4)',
+                  fontFamily: 'SpaceGrotesk_400Regular',
+                  color: '#FFD700',
+                }}
+                placeholderTextColor="#4A5568"
+                placeholder={t('lightningAmountPlaceholder')}
+                value={lightningAmount}
+                onChangeText={setLightningAmount}
+                keyboardType="numeric"
+              />
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  className="flex-1 rounded-xl py-3 items-center"
+                  style={{
+                    backgroundColor: 'rgba(74, 85, 104, 0.3)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(136, 146, 176, 0.3)',
+                  }}
+                  onPress={() => setIsLightningModalVisible(false)}>
+                  <Text
+                    className="text-[#8892B0] text-sm tracking-widest"
+                    style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                    {t('cancel')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  className="flex-1 rounded-xl py-3 items-center"
+                  style={{
+                    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+                    borderWidth: 1,
+                    borderColor: '#FFD700',
+                  }}
+                  onPress={handleLightningPay}
+                  disabled={lightningPaying}>
+                  {lightningPaying ? (
+                    <ActivityIndicator size="small" color="#FFD700" />
+                  ) : (
+                    <Text
+                      className="text-[#FFD700] text-sm tracking-widest"
+                      style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                      ⚡ {t('confirm')}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         </Modal>
       </SafeAreaView>
     </KeyboardAvoidingView>

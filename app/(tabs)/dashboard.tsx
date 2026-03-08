@@ -228,9 +228,12 @@ export default function DashboardScreen() {
       async function loadStats() {
         setLoading(true);
         try {
-          const { data, error } = await supabase
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          const statsQuery = supabase
             .from('books')
             .select('current_value, total_pages, read_pages, status, is_for_sale');
+          if (authUser?.id) statsQuery.eq('user_id', authUser.id);
+          const { data, error } = await statsQuery;
           if (error) throw error;
           if (!isMounted) return;
           const rows = data ?? [];
@@ -289,10 +292,7 @@ export default function DashboardScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await Promise.all([
-              supabase.auth.signOut(),
-              deleteKeys(),
-            ]);
+            await supabase.auth.signOut();
             router.replace('/login');
           } catch (err: any) {
             Alert.alert(t('error'), err.message);
@@ -372,11 +372,13 @@ export default function DashboardScreen() {
                 <Ionicons name="log-out-outline" size={16} color="#EF4444" />
               </TouchableOpacity>
             </View>
-            <Text
-              className="text-[#8892B0] text-[10px] tracking-widest mt-1"
-              style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
-              {userName ? `${t('welcome')}, ${userName}` : t('management')}
-            </Text>
+            <TouchableOpacity onPress={() => router.push('/profile')} activeOpacity={0.7}>
+              <Text
+                className="text-[#8892B0] text-[10px] tracking-widest mt-1"
+                style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
+                {userName ? `${t('welcome')}, ${userName}` : t('management')}
+              </Text>
+            </TouchableOpacity>
           </View>
           <View className="flex-row gap-2">
             {LANGUAGES.map((lang) => (

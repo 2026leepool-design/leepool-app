@@ -40,6 +40,7 @@ export default function AddBookScreen() {
   const [translator, setTranslator] = useState('');
   const [translatedTitles, setTranslatedTitles] = useState<string>('');
   const [currentValue, setCurrentValue] = useState('');
+  const [lightningAddress, setLightningAddress] = useState('');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [focusField, setFocusField] = useState<string | null>(null);
@@ -259,6 +260,7 @@ export default function AddBookScreen() {
           parsedTitles = JSON.parse(translatedTitles);
         } catch {}
       }
+      const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('books').insert([
         {
           title: title.trim(),
@@ -272,6 +274,8 @@ export default function AddBookScreen() {
           read_pages: 0,
           status: 'bought',
           cover_url: coverUrl || null,
+          lightning_address: lightningAddress.trim() || null,
+          user_id: user?.id ?? null,
         },
       ]);
 
@@ -283,7 +287,7 @@ export default function AddBookScreen() {
     } finally {
       setLoading(false);
     }
-  }, [title, author, totalPages, isbn, firstPublishYear, translator, translatedTitles, currentValue, coverUrl, t, router]);
+  }, [title, author, totalPages, isbn, firstPublishYear, translator, translatedTitles, currentValue, lightningAddress, coverUrl, t, router]);
 
   const inputStyle = (field: string) => {
     const isApiUpdated = apiUpdatedFields[field];
@@ -577,6 +581,28 @@ export default function AddBookScreen() {
             onFocus={() => setFocusField('translator')}
             onBlur={() => setFocusField(null)}
             keyboardType="default"
+          />
+        </View>
+
+        {/* Lightning Address (LUD-16) - Optional */}
+        <View className="mb-5">
+          <Text
+            className="text-[#8892B0] text-xs mb-2 tracking-widest"
+            style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+            {t('lightningAddress')}
+          </Text>
+          <TextInput
+            className="rounded-xl px-4 py-4 text-white text-base"
+            style={inputStyle('lightningAddress')}
+            placeholderTextColor="#4A5568"
+            placeholder={t('lightningAddressPlaceholder')}
+            value={lightningAddress}
+            onChangeText={setLightningAddress}
+            onFocus={() => setFocusField('lightningAddress')}
+            onBlur={() => setFocusField(null)}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
           />
         </View>
 

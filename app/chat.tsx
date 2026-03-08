@@ -160,19 +160,23 @@ export default function ChatScreen() {
     const text = inputText.trim();
     if (!text || !peerNpubTrimmed || sending) return;
 
+    const optId = `opt-${Date.now()}`;
+    const optimistic: ChatMessage = {
+      id: optId,
+      text,
+      isFromMe: true,
+      createdAt: Math.floor(Date.now() / 1000),
+    };
+
     setSending(true);
     setInputText('');
+    setMessages((prev) => [...prev, optimistic].sort((a, b) => a.createdAt - b.createdAt));
+
     try {
       await sendEncryptedMessage(peerNpubTrimmed, text);
-      const optimistic: ChatMessage = {
-        id: `opt-${Date.now()}`,
-        text,
-        isFromMe: true,
-        createdAt: Math.floor(Date.now() / 1000),
-      };
-      setMessages((prev) => [...prev, optimistic].sort((a, b) => a.createdAt - b.createdAt));
     } catch (e) {
       setInputText(text);
+      setMessages((prev) => prev.filter((m) => m.id !== optId));
     } finally {
       setSending(false);
     }
