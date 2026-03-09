@@ -1,16 +1,14 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
   Modal,
   Switch,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
+  Linking,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -21,7 +19,9 @@ import { supabase } from '@/utils/supabase';
 import { generateBookSynopsis } from '@/utils/gemini';
 import { loadKeys } from '@/utils/nostr';
 import { payLightningInvoice } from '@/utils/lightning';
+import { fetchBitcoinRates, satsToUsd, satsToEur, type BtcRates } from '@/utils/currency';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardWrapper } from '@/components/KeyboardWrapper';
 
 type BookData = {
   title: string;
@@ -76,12 +76,15 @@ export default function SynopsisScreen() {
   const [savingListing, setSavingListing] = useState(false);
   const [focusSats, setFocusSats] = useState(false);
   const [myNpub, setMyNpub] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
   const [isLightningModalVisible, setIsLightningModalVisible] = useState(false);
   const [lightningAmount, setLightningAmount] = useState('1000');
   const [lightningPaying, setLightningPaying] = useState(false);
+  const [rates, setRates] = useState<BtcRates | null>(null);
 
   useFocusEffect(
     useCallback(() => {
+      fetchBitcoinRates().then(setRates);
       if (!id) {
         setLoading(false);
         return;
@@ -92,12 +95,14 @@ export default function SynopsisScreen() {
 
       const fetchBook = async () => {
         try {
-          const [bookRes, keysRes] = await Promise.all([
+          const [bookRes, keysRes, userRes] = await Promise.all([
             supabase.from('books').select('*').eq('id', id).single(),
             loadKeys(),
+            supabase.auth.getUser(),
           ]);
           const { data, error } = bookRes;
           if (keysRes?.npub && isMounted) setMyNpub(keysRes.npub);
+          if (userRes.data?.user?.id && isMounted) setMyUserId(userRes.data.user.id);
           if (!isMounted) return;
           if (!error && data) {
             const b = data as BookData;
@@ -177,7 +182,14 @@ export default function SynopsisScreen() {
   const truncateNpub = (npub: string) =>
     npub.length <= 28 ? npub : `${npub.slice(0, 12)}...${npub.slice(-12)}`;
 
-  const isOwnBook = !book?.seller_npub || book.seller_npub === myNpub;
+  // isMyBook: kitap bana ait mi? seller_npub veya user_id ile kontrol edilir.
+  const bookData = book as (BookData & { user_id?: string }) | null;
+  const isMyBook =
+    !bookData?.seller_npub ||
+    (!!myNpub && bookData.seller_npub === myNpub) ||
+    (!!myUserId && bookData.user_id === myUserId);
+
+  const isOwnBook = isMyBook;
 
   const showMessageSeller =
     book?.is_for_sale &&
@@ -192,6 +204,13 @@ export default function SynopsisScreen() {
     !!book?.seller_npub &&
     book.seller_npub !== myNpub;
 
+  const showDisabledBuyLightning =
+    book?.is_for_sale &&
+    !book?.lightning_address?.trim() &&
+    !!myNpub &&
+    !!book?.seller_npub &&
+    book.seller_npub !== myNpub;
+
   const handleLightningPay = useCallback(async () => {
     if (!book?.lightning_address?.trim()) return;
     const sats = parseInt(lightningAmount, 10);
@@ -202,11 +221,19 @@ export default function SynopsisScreen() {
     setIsLightningModalVisible(false);
     setLightningPaying(true);
     try {
-      await payLightningInvoice(book.lightning_address.trim(), sats, `${book.title} - LeePool`);
+      await payLightningInvoice(book.lightning_address.trim(), sats, `${book.title} - LeePool`, t('error'));
     } finally {
       setLightningPaying(false);
     }
   }, [book?.lightning_address, book?.title, lightningAmount, t]);
+
+  const handleAmazonRedirect = useCallback(() => {
+    if (!book) return;
+    const url = book.isbn
+      ? `https://www.amazon.com/s?k=${book.isbn}&tag=leepool-21`
+      : `https://www.amazon.com/s?k=${encodeURIComponent(`${book.title} ${book.author}`)}&tag=leepool-21`;
+    Linking.openURL(url);
+  }, [book]);
 
   const handleRegenerate = useCallback(async () => {
     if (!id || !book?.title || !book?.author) return;
@@ -287,39 +314,154 @@ export default function SynopsisScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
-        {/* ── Back Button ── */}
-        <View className="px-5 py-3">
+    <KeyboardWrapper
+      edges={['top']}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+      extraChildren={
+        <>
+        <Modal
+          visible={coverExpanded}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCoverExpanded(false)}>
           <TouchableOpacity
-            onPress={() => router.back()}
-            className="flex-row items-center rounded-xl py-2 pr-4 self-start"
-            style={{
-              backgroundColor: '#131B2B',
-              borderWidth: 1,
-              borderColor: 'rgba(0, 229, 255, 0.2)',
-            }}>
-            <View className="pl-3 pr-1">
-              <Ionicons name="arrow-back" size={22} color="#00E5FF" />
+            activeOpacity={1}
+            className="flex-1 justify-center items-center"
+            style={{ backgroundColor: 'rgba(0,0,0,0.92)' }}
+            onPress={() => setCoverExpanded(false)}>
+            <View className="flex-1 w-full justify-center items-center px-4">
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={(e) => e.stopPropagation()}
+                style={{ maxWidth: '100%', maxHeight: '80%' }}>
+                <Image
+                  source={{ uri: book.cover_url ?? undefined }}
+                  style={{ width: 280, height: 400 }}
+                  contentFit="contain"
+                />
+              </TouchableOpacity>
             </View>
-            <Text
-              className="text-[#00E5FF] text-sm tracking-widest"
-              style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              {t('back')}
-            </Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setCoverExpanded(false)}
+              className="absolute top-14 right-5 w-12 h-12 rounded-full items-center justify-center"
+              style={{
+                backgroundColor: 'rgba(0, 229, 255, 0.15)',
+                borderWidth: 1,
+                borderColor: '#00E5FF',
+              }}>
+              <Ionicons name="close" size={24} color="#00E5FF" />
+            </TouchableOpacity>
           </TouchableOpacity>
-        </View>
+        </Modal>
+        <Modal
+          visible={isLightningModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsLightningModalVisible(false)}>
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0, 0, 0, 0.85)',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: 24,
+            }}>
+            <View
+              style={{
+                width: '90%',
+                backgroundColor: '#0B0E14',
+                borderRadius: 20,
+                padding: 24,
+                borderWidth: 1,
+                borderColor: 'rgba(255, 215, 0, 0.3)',
+              }}>
+              <Text
+                className="text-[#FFD700] text-base mb-4 tracking-widest"
+                style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                ⚡ {t('lightningAmountPrompt')}
+              </Text>
+              <TextInput
+                className="rounded-xl px-4 py-4 text-base mb-4"
+                style={{
+                  backgroundColor: '#131B2B',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 215, 0, 0.4)',
+                  fontFamily: 'SpaceGrotesk_400Regular',
+                  color: '#FFD700',
+                }}
+                placeholderTextColor="#4A5568"
+                placeholder={t('lightningAmountPlaceholder')}
+                value={lightningAmount}
+                onChangeText={setLightningAmount}
+                keyboardType="numeric"
+              />
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  className="flex-1 rounded-xl py-3 items-center"
+                  style={{
+                    backgroundColor: 'rgba(74, 85, 104, 0.3)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(136, 146, 176, 0.3)',
+                  }}
+                  onPress={() => setIsLightningModalVisible(false)}>
+                  <Text
+                    className="text-[#8892B0] text-sm tracking-widest"
+                    style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                    {t('cancel')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  className="flex-1 rounded-xl py-3 items-center"
+                  style={{
+                    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+                    borderWidth: 1,
+                    borderColor: '#FFD700',
+                  }}
+                  onPress={handleLightningPay}
+                  disabled={lightningPaying}>
+                  {lightningPaying ? (
+                    <ActivityIndicator size="small" color="#FFD700" />
+                  ) : (
+                    <Text
+                      className="text-[#FFD700] text-sm tracking-widest"
+                      style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                      ⚡ {t('confirm')}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        </>
+      }>
+      {/* ── Back Button ── */}
+      <View className="px-5 py-3">
+        <TouchableOpacity
+          onPress={() => router.back()}
+          className="flex-row items-center rounded-xl py-2 pr-4 self-start"
+          style={{
+            backgroundColor: '#131B2B',
+            borderWidth: 1,
+            borderColor: 'rgba(0, 229, 255, 0.2)',
+          }}>
+          <View className="pl-3 pr-1">
+            <Ionicons name="arrow-back" size={22} color="#00E5FF" />
+          </View>
+          <Text
+            className="text-[#00E5FF] text-sm tracking-widest"
+            style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+            {t('back')}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
-          {/* ── Top: Cover + Info ── */}
-        <View
-          className="flex-row items-start gap-4 rounded-2xl p-4 mb-4"
+      {/* ── Top: Cover + Info ── */}
+      <View
+        className="flex-row items-start gap-4 rounded-2xl p-4 mb-4"
           style={{
             backgroundColor: '#131B2B',
             borderWidth: 1,
@@ -362,6 +504,15 @@ export default function SynopsisScreen() {
                     {t('forSale')} · {book.price_sats ? `${book.price_sats.toLocaleString()} sats` : '—'}
                   </Text>
                 </View>
+                {book.price_sats && rates && (
+                  <View className="mt-1 ml-1">
+                    <Text
+                      className="text-[#8892B0] text-[10px]"
+                      style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                      ≈ ${satsToUsd(book.price_sats, rates)?.toFixed(2)} · €{satsToEur(book.price_sats, rates)?.toFixed(2)}
+                    </Text>
+                  </View>
+                )}
                 <View className="flex-row flex-wrap gap-2 mt-3">
                   {showMessageSeller && (
                     <TouchableOpacity
@@ -406,6 +557,22 @@ export default function SynopsisScreen() {
                       </Text>
                     </TouchableOpacity>
                   )}
+                  {showDisabledBuyLightning && (
+                    <View
+                      className="flex-row items-center gap-2 rounded-xl py-2.5 px-4 opacity-50"
+                      style={{
+                        backgroundColor: 'rgba(136, 146, 176, 0.1)',
+                        borderWidth: 1,
+                        borderColor: '#8892B0',
+                      }}>
+                      <Ionicons name="wallet-outline" size={16} color="#8892B0" />
+                      <Text
+                        className="text-sm tracking-widest"
+                        style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#8892B0' }}>
+                        {t('noWalletAdded')}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
             )}
@@ -415,11 +582,15 @@ export default function SynopsisScreen() {
               numberOfLines={3}>
               {book.title}
             </Text>
-            <Text
-              className="text-[#8892B0] text-xs tracking-widest mb-1"
-              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              {book.author?.toUpperCase()}
-            </Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => book?.author && router.push(`/author/${encodeURIComponent(book.author)}`)}>
+              <Text
+                className="text-xs tracking-widest mb-1"
+                style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#00E5FF' }}>
+                {book.author?.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
             {originalTitleText ? (
               <Text
                 className="text-[#6B7280] text-xs mb-1"
@@ -515,18 +686,20 @@ export default function SynopsisScreen() {
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
               IA SYNC
             </Text>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleRegenerate}
-              disabled={regenerating}
-              className="w-8 h-8 rounded-lg items-center justify-center"
-              style={{ backgroundColor: 'rgba(0, 229, 255, 0.08)' }}>
-              {regenerating ? (
-                <ActivityIndicator size="small" color="#00E5FF" />
-              ) : (
-                <Ionicons name="refresh" size={18} color="#00E5FF" />
-              )}
-            </TouchableOpacity>
+            {isMyBook && (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleRegenerate}
+                disabled={regenerating}
+                className="w-8 h-8 rounded-lg items-center justify-center"
+                style={{ backgroundColor: 'rgba(0, 229, 255, 0.08)' }}>
+                {regenerating ? (
+                  <ActivityIndicator size="small" color="#00E5FF" />
+                ) : (
+                  <Ionicons name="refresh" size={18} color="#00E5FF" />
+                )}
+              </TouchableOpacity>
+            )}
           </View>
           <Text
             className="text-[#FFFFFF] text-base leading-7"
@@ -534,6 +707,24 @@ export default function SynopsisScreen() {
             {displayText || t('iaSyncPending')}
           </Text>
         </View>
+
+        {/* ── Read-only badge for others' books ── */}
+        {!isMyBook && (
+          <View
+            className="flex-row items-center gap-2 rounded-xl px-4 py-3 mb-4"
+            style={{
+              backgroundColor: 'rgba(139, 92, 246, 0.08)',
+              borderWidth: 1,
+              borderColor: 'rgba(139, 92, 246, 0.3)',
+            }}>
+            <Ionicons name="lock-closed-outline" size={14} color="#A78BFA" />
+            <Text
+              className="text-[10px] tracking-widest flex-1"
+              style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#A78BFA' }}>
+              READ-ONLY · Bu kitap başka bir kullanıcıya ait
+            </Text>
+          </View>
+        )}
 
         {/* ── P2P Market Settings ── */}
         {isOwnBook && <View className="mb-6">
@@ -661,129 +852,44 @@ export default function SynopsisScreen() {
             )}
           </TouchableOpacity>
         </View>}
-        </ScrollView>
 
-        {/* ── Full Screen Cover Modal ── */}
-        <Modal
-          visible={coverExpanded}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setCoverExpanded(false)}>
-          <TouchableOpacity
-            activeOpacity={1}
-            className="flex-1 justify-center items-center"
-            style={{ backgroundColor: 'rgba(0,0,0,0.92)' }}
-            onPress={() => setCoverExpanded(false)}>
-            <View className="flex-1 w-full justify-center items-center px-4">
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={(e) => e.stopPropagation()}
-                style={{ maxWidth: '100%', maxHeight: '80%' }}>
-                <Image
-                  source={{ uri: book.cover_url ?? undefined }}
-                  style={{ width: 280, height: 400 }}
-                  contentFit="contain"
-                />
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => setCoverExpanded(false)}
-              className="absolute top-14 right-5 w-12 h-12 rounded-full items-center justify-center"
-              style={{
-                backgroundColor: 'rgba(0, 229, 255, 0.15)',
-                borderWidth: 1,
-                borderColor: '#00E5FF',
-              }}>
-              <Ionicons name="close" size={24} color="#00E5FF" />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* ── Lightning Pay Modal ── */}
-        <Modal
-          visible={isLightningModalVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setIsLightningModalVisible(false)}>
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: 'rgba(0, 0, 0, 0.85)',
-              justifyContent: 'center',
-              alignItems: 'center',
-              padding: 24,
-            }}>
+        {/* ── Amazon Affiliate Button ── */}
+        <View className="mb-2">
+          <View className="flex-row items-center gap-3 mb-4">
+            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255, 153, 0, 0.25)' }} />
             <View
-              style={{
-                width: '90%',
-                backgroundColor: '#0B0E14',
-                borderRadius: 20,
-                padding: 24,
-                borderWidth: 1,
-                borderColor: 'rgba(255, 215, 0, 0.3)',
-              }}>
+              className="px-3 py-1 rounded-full"
+              style={{ backgroundColor: 'rgba(255, 153, 0, 0.08)', borderWidth: 1, borderColor: 'rgba(255, 153, 0, 0.3)' }}>
               <Text
-                className="text-[#FFD700] text-base mb-4 tracking-widest"
+                className="text-[#FF9900] text-[10px] tracking-widest"
                 style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                ⚡ {t('lightningAmountPrompt')}
+                AMAZON
               </Text>
-              <TextInput
-                className="rounded-xl px-4 py-4 text-base mb-4"
-                style={{
-                  backgroundColor: '#131B2B',
-                  borderWidth: 1,
-                  borderColor: 'rgba(255, 215, 0, 0.4)',
-                  fontFamily: 'SpaceGrotesk_400Regular',
-                  color: '#FFD700',
-                }}
-                placeholderTextColor="#4A5568"
-                placeholder={t('lightningAmountPlaceholder')}
-                value={lightningAmount}
-                onChangeText={setLightningAmount}
-                keyboardType="numeric"
-              />
-              <View className="flex-row gap-3">
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  className="flex-1 rounded-xl py-3 items-center"
-                  style={{
-                    backgroundColor: 'rgba(74, 85, 104, 0.3)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(136, 146, 176, 0.3)',
-                  }}
-                  onPress={() => setIsLightningModalVisible(false)}>
-                  <Text
-                    className="text-[#8892B0] text-sm tracking-widest"
-                    style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                    {t('cancel')}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  className="flex-1 rounded-xl py-3 items-center"
-                  style={{
-                    backgroundColor: 'rgba(255, 215, 0, 0.2)',
-                    borderWidth: 1,
-                    borderColor: '#FFD700',
-                  }}
-                  onPress={handleLightningPay}
-                  disabled={lightningPaying}>
-                  {lightningPaying ? (
-                    <ActivityIndicator size="small" color="#FFD700" />
-                  ) : (
-                    <Text
-                      className="text-[#FFD700] text-sm tracking-widest"
-                      style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                      ⚡ {t('confirm')}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
             </View>
+            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255, 153, 0, 0.25)' }} />
           </View>
-        </Modal>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={handleAmazonRedirect}
+            className="rounded-2xl py-4 items-center justify-center flex-row gap-3"
+            style={{
+              backgroundColor: '#0A0D13',
+              borderWidth: 1.5,
+              borderColor: '#FF9900',
+              shadowColor: '#FF9900',
+              shadowOpacity: 0.35,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 0 },
+              elevation: 8,
+            }}>
+            <Text style={{ fontSize: 18 }}>🛒</Text>
+            <Text
+              className="text-[#FF9900] text-sm tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+              {t('findPhysicalCopy')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+    </KeyboardWrapper>
   );
 }

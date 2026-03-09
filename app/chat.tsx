@@ -5,8 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Keyboard,
 } from 'react-native';
@@ -14,6 +12,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardWrapper } from '@/components/KeyboardWrapper';
 import { SimplePool } from 'nostr-tools/pool';
 import * as nip04 from 'nostr-tools/nip04';
 import * as nip19 from 'nostr-tools/nip19';
@@ -225,11 +224,8 @@ export default function ChatScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
-        {/* Header */}
+    <KeyboardWrapper useScroll={false} edges={['top']}>
+      {/* Header */}
         <View
           className="flex-row items-center px-4 py-3 border-b"
           style={{
@@ -336,7 +332,6 @@ export default function ChatScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+    </KeyboardWrapper>
   );
 }

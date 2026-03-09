@@ -135,3 +135,64 @@ export async function analyzeBookCover(
     return null;
   }
 }
+
+/**
+ * Analyzes a book cover image and returns "Book Title - Author Name" for search.
+ * Used by dashboard omni-search camera flow.
+ */
+export async function analyzeBookCoverForSearch(
+  base64Image: string
+): Promise<string | null> {
+  if (!GEMINI_API_KEY) {
+    console.warn('EXPO_PUBLIC_GEMINI_API_KEY is not set');
+    return null;
+  }
+
+  const prompt =
+    'Bu resimdeki kitabın adını ve yazarını bul. Sadece "Kitap Adı - Yazar Adı" formatında yanıt ver. Başka bir şey yazma.';
+
+  try {
+    const response = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              {
+                inline_data: {
+                  mime_type: 'image/jpeg',
+                  data: base64Image.includes(',')
+                    ? base64Image.split(',')[1] ?? base64Image
+                    : base64Image,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(err);
+    }
+
+    const data = (await response.json()) as {
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> };
+      }>;
+    };
+
+    const text =
+      data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
+    return text;
+  } catch (error) {
+    console.error('Gemini analyzeBookCoverForSearch error:', error);
+    return null;
+  }
+}

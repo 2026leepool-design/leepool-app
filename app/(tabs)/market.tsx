@@ -13,6 +13,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
 import { loadKeys } from '@/utils/nostr';
+import { fetchBitcoinRates, satsToUsd, type BtcRates } from '@/utils/currency';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,11 +47,13 @@ function MarketCard({
   t,
   onPress,
   isOwnBook,
+  btcRates,
 }: {
   book: MarketBook;
   t: (key: string) => string;
   onPress: () => void;
   isOwnBook?: boolean;
+  btcRates: BtcRates | null;
 }) {
   const condLabel = book.condition
     ? t(`condition${book.condition.charAt(0).toUpperCase() + book.condition.slice(1)}` as 'conditionNew' | 'conditionGood' | 'conditionWorn')
@@ -126,18 +129,27 @@ function MarketCard({
             </View>
           ) : <View />}
 
-          <View className="flex-row items-center gap-1">
-            <Text style={{ fontSize: 14 }}>⚡</Text>
-            <Text
-              className="text-xl"
-              style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#00FF9D' }}>
-              {book.price_sats?.toLocaleString() ?? '—'}
-            </Text>
-            <Text
-              className="text-[#6B7280] text-[10px] self-end mb-1"
-              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              sats
-            </Text>
+          <View className="items-end">
+            <View className="flex-row items-center gap-1">
+              <Text style={{ fontSize: 14 }}>⚡</Text>
+              <Text
+                className="text-xl"
+                style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#00FF9D' }}>
+                {book.price_sats?.toLocaleString() ?? '—'}
+              </Text>
+              <Text
+                className="text-[#6B7280] text-[10px] self-end mb-1"
+                style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                sats
+              </Text>
+            </View>
+            {book.price_sats && btcRates ? (
+              <Text
+                className="text-[9px]"
+                style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#4A5568' }}>
+                ~${satsToUsd(book.price_sats, btcRates)?.toLocaleString()}
+              </Text>
+            ) : null}
           </View>
         </View>
       </View>
@@ -154,6 +166,7 @@ export default function MarketTabScreen() {
   const [books, setBooks] = useState<MarketBook[]>([]);
   const [loading, setLoading] = useState(true);
   const [myNpub, setMyNpub] = useState<string | null>(null);
+  const [btcRates, setBtcRates] = useState<BtcRates | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -161,19 +174,21 @@ export default function MarketTabScreen() {
       async function loadMarket() {
         setLoading(true);
         try {
-          const [booksRes, keys] = await Promise.all([
+          const [booksRes, keys, rates] = await Promise.all([
             supabase
               .from('books')
               .select('id, title, author, cover_url, price_sats, condition, isbn, translator, first_publish_year, created_at, seller_npub')
               .eq('is_for_sale', true)
               .order('created_at', { ascending: false }),
             loadKeys(),
+            fetchBitcoinRates(),
           ]);
           const { data, error } = booksRes;
           if (error) throw error;
           if (!isMounted) return;
           setBooks((data ?? []) as MarketBook[]);
           if (keys?.npub) setMyNpub(keys.npub);
+          if (rates) setBtcRates(rates);
         } catch {
           // silently fail
         } finally {
@@ -231,6 +246,7 @@ export default function MarketTabScreen() {
               t={t}
               onPress={() => router.push({ pathname: '/synopsis', params: { id: item.id } })}
               isOwnBook={!!myNpub && !!item.seller_npub && item.seller_npub === myNpub}
+              btcRates={btcRates}
             />
           )}
           ListEmptyComponent={

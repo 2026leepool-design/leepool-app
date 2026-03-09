@@ -1,15 +1,19 @@
 import { deleteKeys, generateAndSaveKeys, importNsecKey, loadKeys, type NostrKeys } from '@/utils/nostr';
 import { supabase } from '@/utils/supabase';
+import { fetchBitcoinRates, type BtcRates } from '@/utils/currency';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Animated, Image, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Image, Modal, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Swipeable } from 'react-native-gesture-handler';
 import { BarChart, LineChart } from 'react-native-gifted-charts';
 import QRCode from 'react-native-qrcode-svg';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardWrapper } from '@/components/KeyboardWrapper';
+import { BarcodeScannerModal } from '@/components/BarcodeScannerModal';
+import { analyzeBookCover } from '@/utils/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +123,10 @@ export default function DashboardScreen() {
   const [isExportModalVisible, setIsExportModalVisible] = useState(false);
   const [importNsec, setImportNsec] = useState('');
   const [userName, setUserName] = useState<string | null>(null);
+  const [btcRates, setBtcRates] = useState<BtcRates | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
+  const [analyzingCover, setAnalyzingCover] = useState(false);
   const nostrSwipeableRef = useRef<Swipeable>(null);
 
   // Chart States
@@ -127,100 +135,97 @@ export default function DashboardScreen() {
   const [valueTimeRange, setValueTimeRange] = useState('1M');
   const [readTimeRange, setReadTimeRange] = useState('1W');
 
+  type ChartPoint = { value: number; label: string };
+  type RawLog = { created_at: string; pages_read: number };
+
+  const [allReadingLogs, setAllReadingLogs] = useState<RawLog[]>([]);
+
+  const MONTHS_KEYS = ['monthJan', 'monthFeb', 'monthMar', 'monthApr', 'monthMay', 'monthJun', 'monthJul', 'monthAug', 'monthSep', 'monthOct', 'monthNov', 'monthDec'];
+  const DAYS_KEYS = ['daySun', 'dayMon', 'dayTue', 'dayWed', 'dayThu', 'dayFri', 'daySat'];
+
+  function groupReadingLogs(logs: RawLog[], range: string): ChartPoint[] {
+    const now = new Date();
+    const cutoff = new Date(now);
+
+    if (range === '1W') cutoff.setDate(now.getDate() - 6);
+    else if (range === '1M') cutoff.setDate(now.getDate() - 27);
+    else if (range === '3M') cutoff.setMonth(now.getMonth() - 2);
+    else if (range === '6M') cutoff.setMonth(now.getMonth() - 5);
+    else if (range === '1Y') cutoff.setFullYear(now.getFullYear() - 1);
+    cutoff.setHours(0, 0, 0, 0);
+
+    const filtered = logs.filter((l) => new Date(l.created_at) >= cutoff);
+    const map = new Map<string, number>();
+
+    for (const log of filtered) {
+      const d = new Date(log.created_at);
+      let key = '';
+      if (range === '1W') {
+        key = d.toISOString().slice(0, 10);
+      } else if (range === '1M') {
+        const weekNum = Math.floor((now.getTime() - d.getTime()) / (7 * 86400000));
+        key = String(Math.min(3, weekNum));
+      } else {
+        key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      }
+      map.set(key, (map.get(key) ?? 0) + log.pages_read);
+    }
+
+    if (range === '1W') {
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(now);
+        d.setDate(now.getDate() - (6 - i));
+        d.setHours(0, 0, 0, 0);
+        const key = d.toISOString().slice(0, 10);
+        return { value: map.get(key) ?? 0, label: t(DAYS_KEYS[d.getDay()]) };
+      });
+    }
+
+    if (range === '1M') {
+      return [3, 2, 1, 0].map((w) => ({
+        value: map.get(String(w)) ?? 0,
+        label: `${4 - w}. ${t('weekAbbr')}`,
+      }));
+    }
+
+    const months: ChartPoint[] = [];
+    const count = range === '3M' ? 3 : range === '6M' ? 6 : 12;
+    for (let i = count - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = range === '1Y' && i % 3 !== 0
+        ? ''
+        : t(MONTHS_KEYS[d.getMonth()]);
+      months.push({ value: map.get(key) ?? 0, label });
+    }
+    return months;
+  }
+
   const getValueData = () => {
     switch (valueTimeRange) {
-      case '1W':
-        return [
-          { value: 120, label: 'Pzt' },
-          { value: 125, label: 'Sal' },
-          { value: 122, label: 'Çar' },
-          { value: 130, label: 'Per' },
-          { value: 133, label: 'Cum' },
-          { value: 135, label: 'Cmt' },
-          { value: 138, label: 'Paz' },
-        ];
-      case '1M':
-        return [
-          { value: 100, label: '1. Hf' },
-          { value: 115, label: '2. Hf' },
-          { value: 125, label: '3. Hf' },
-          { value: 133, label: '4. Hf' },
-        ];
-      case '3M':
-        return [
-          { value: 90, label: 'Oca' },
-          { value: 110, label: 'Şub' },
-          { value: 133, label: 'Mar' },
-        ];
-      case '6M':
-        return [
-          { value: 70, label: 'Eki' },
-          { value: 85, label: 'Kas' },
-          { value: 90, label: 'Ara' },
-          { value: 105, label: 'Oca' },
-          { value: 120, label: 'Şub' },
-          { value: 133, label: 'Mar' },
-        ];
-      case '1Y':
-        return [
-          { value: 50, label: '2025' },
-          { value: 80, label: 'Haz' },
-          { value: 110, label: 'Eyl' },
-          { value: 133, label: '2026' },
-        ];
-      default:
-        return [];
-    }
-  };
-
-  const getReadData = () => {
-    switch (readTimeRange) {
-      case '1W':
-        return [
-          { value: 12, label: 'Pzt' },
-          { value: 34, label: 'Sal' },
-          { value: 10, label: 'Çar' },
-          { value: 45, label: 'Per' },
-          { value: 20, label: 'Cum' },
-          { value: 55, label: 'Cmt' },
-          { value: 30, label: 'Paz' },
-        ];
-      case '1M':
-        return [
-          { value: 120, label: '1. Hf' },
-          { value: 180, label: '2. Hf' },
-          { value: 150, label: '3. Hf' },
-          { value: 210, label: '4. Hf' },
-        ];
-      case '3M':
-        return [
-          { value: 450, label: 'Oca' },
-          { value: 520, label: 'Şub' },
-          { value: 610, label: 'Mar' },
-        ];
-      case '6M':
-        return [
-          { value: 380, label: 'Eki' },
-          { value: 420, label: 'Kas' },
-          { value: 450, label: 'Ara' },
-          { value: 500, label: 'Oca' },
-          { value: 520, label: 'Şub' },
-          { value: 610, label: 'Mar' },
-        ];
-      case '1Y':
-        return [
-          { value: 1200, label: '2025' },
-          { value: 2500, label: 'Haz' },
-          { value: 3200, label: 'Eyl' },
-          { value: 4500, label: '2026' },
-        ];
-      default:
-        return [];
+      case '1W': return [
+        { value: 120, label: t('dayMon') }, { value: 125, label: t('dayTue') }, { value: 122, label: t('dayWed') },
+        { value: 130, label: t('dayThu') }, { value: 133, label: t('dayFri') }, { value: 135, label: t('daySat') }, { value: 138, label: t('daySun') },
+      ];
+      case '1M': return [
+        { value: 100, label: `1. ${t('weekAbbr')}` }, { value: 115, label: `2. ${t('weekAbbr')}` }, { value: 125, label: `3. ${t('weekAbbr')}` }, { value: 133, label: `4. ${t('weekAbbr')}` },
+      ];
+      case '3M': return [
+        { value: 90, label: t('monthJan') }, { value: 110, label: t('monthFeb') }, { value: 133, label: t('monthMar') },
+      ];
+      case '6M': return [
+        { value: 70, label: t('monthOct') }, { value: 85, label: t('monthNov') }, { value: 90, label: t('monthDec') },
+        { value: 105, label: t('monthJan') }, { value: 120, label: t('monthFeb') }, { value: 133, label: t('monthMar') },
+      ];
+      case '1Y': return [
+        { value: 50, label: '2025' }, { value: 80, label: t('monthJun') }, { value: 110, label: t('monthSep') }, { value: 133, label: '2026' },
+      ];
+      default: return [];
     }
   };
 
   const currentValueData = getValueData();
-  const currentReadData = getReadData();
+  const currentReadData = groupReadingLogs(allReadingLogs, readTimeRange);
   const totalReadInRange = currentReadData.reduce((acc, curr) => acc + curr.value, 0);
 
   useFocusEffect(
@@ -278,9 +283,32 @@ export default function DashboardScreen() {
           if (isMounted) setNostrLoading(false);
         }
       }
+      async function loadRates() {
+        const rates = await fetchBitcoinRates();
+        if (isMounted && rates) setBtcRates(rates);
+      }
+      async function fetchReadingLogs() {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user?.id || !isMounted) return;
+          const oneYearAgo = new Date();
+          oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+          const { data } = await supabase
+            .from('reading_logs')
+            .select('created_at, pages_read')
+            .eq('user_id', user.id)
+            .gte('created_at', oneYearAgo.toISOString())
+            .order('created_at', { ascending: true });
+          if (isMounted && data) setAllReadingLogs(data);
+        } catch {
+          // silently fail
+        }
+      }
       loadStats();
       loadUser();
       loadNostrKeys();
+      loadRates();
+      fetchReadingLogs();
       return () => { isMounted = false; };
     }, [t])
   );
@@ -289,7 +317,6 @@ export default function DashboardScreen() {
     const doSignOut = async () => {
       try {
         await supabase.auth.signOut();
-        try { await deleteKeys(); } catch {}
         router.replace('/login');
       } catch (err: any) {
         const msg = err?.message ?? String(err);
@@ -384,6 +411,60 @@ export default function DashboardScreen() {
     return `${npub.slice(0, 12)}...${npub.slice(-12)}`;
   };
 
+  const handleCoverSearch = useCallback(async () => {
+    Alert.alert(t('photoOptions'), '', [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('takePhoto'),
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert(t('error'), t('cameraPermission'));
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            quality: 0.5,
+            base64: true,
+          });
+          if (!result.canceled && result.assets[0]?.base64) {
+            setAnalyzingCover(true);
+            try {
+              const raw = result.assets[0].base64;
+              const query = await analyzeBookCover(raw);
+              if (query) router.push({ pathname: '/search', params: { query } });
+            } finally {
+              setAnalyzingCover(false);
+            }
+          }
+        },
+      },
+      {
+        text: t('chooseGallery'),
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert(t('error'), t('cameraPermission'));
+            return;
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            quality: 0.5,
+            base64: true,
+          });
+          if (!result.canceled && result.assets[0]?.base64) {
+            setAnalyzingCover(true);
+            try {
+              const raw = result.assets[0].base64;
+              const query = await analyzeBookCover(raw);
+              if (query) router.push({ pathname: '/search', params: { query } });
+            } finally {
+              setAnalyzingCover(false);
+            }
+          }
+        },
+      },
+    ]);
+  }, [t, router]);
+
   const progressPercent =
     stats.totalPages > 0 ? Math.round((stats.readPages / stats.totalPages) * 100) : 0;
 
@@ -391,14 +472,12 @@ export default function DashboardScreen() {
     val.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}>
-
-        {/* ── Header row ── */}
-        <View className="flex-row items-center justify-between py-4">
+    <>
+    <KeyboardWrapper
+      edges={['top']}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
+      {/* ── Header row ── */}
+        <View className="flex-row items-center justify-between py-3">
           <View>
             <View className="flex-row items-center gap-2">
               <Image
@@ -453,6 +532,90 @@ export default function DashboardScreen() {
             ))}
           </View>
         </View>
+
+        {/* ── Omni-Search Bar ── */}
+        <View
+          className="flex-row items-center bg-[#0B0E14] rounded-lg px-3 py-2 mb-4"
+          style={{ borderWidth: 1, borderColor: 'rgba(0, 229, 255, 0.5)' }}>
+          <Ionicons name="search-outline" size={20} color="#00E5FF" style={{ marginRight: 10 }} />
+          <TextInput
+            className="flex-1 py-2.5 text-base"
+            style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#E2E8F0' }}
+            placeholder={t('searchPlaceholder')}
+            placeholderTextColor="#4A5568"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={() => {
+              const q = searchQuery.trim();
+              if (q) router.push({ pathname: '/search', params: { query: q } });
+            }}
+            returnKeyType="search"
+            editable={!analyzingCover}
+          />
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setBarcodeModalVisible(true)}
+            disabled={analyzingCover}
+            className="w-9 h-9 rounded-lg items-center justify-center mr-1"
+            style={{ backgroundColor: 'rgba(0, 229, 255, 0.1)' }}>
+            <Ionicons name="barcode-outline" size={20} color="#00E5FF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={handleCoverSearch}
+            disabled={analyzingCover}
+            className="w-9 h-9 rounded-lg items-center justify-center"
+            style={{ backgroundColor: 'rgba(0, 229, 255, 0.1)' }}>
+            {analyzingCover ? (
+              <ActivityIndicator size="small" color="#00E5FF" />
+            ) : (
+              <Ionicons name="camera-outline" size={20} color="#00E5FF" />
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <BarcodeScannerModal
+          visible={barcodeModalVisible}
+          onClose={() => setBarcodeModalVisible(false)}
+          onScan={(isbn) => {
+            router.push({ pathname: '/search', params: { query: `isbn:${isbn}` } });
+          }}
+        />
+
+        {/* ── BTC Live Ticker ── */}
+        {btcRates && (
+          <View
+            className="flex-row items-center gap-3 rounded-xl px-4 py-2 mb-4"
+            style={{
+              backgroundColor: 'rgba(247, 147, 26, 0.08)',
+              borderWidth: 1,
+              borderColor: 'rgba(247, 147, 26, 0.25)',
+            }}>
+            <Text style={{ fontSize: 14 }}>₿</Text>
+            <Text
+              className="text-[10px] tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#F7931A' }}>
+              BTC/USD: ${btcRates.usd.toLocaleString()}
+            </Text>
+            <View style={{ width: 1, height: 10, backgroundColor: 'rgba(247, 147, 26, 0.3)' }} />
+            <Text
+              className="text-[10px] tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#F7931A' }}>
+              BTC/EUR: €{btcRates.eur.toLocaleString()}
+            </Text>
+            <View style={{ flex: 1 }} />
+            <View
+              className="flex-row items-center gap-1 px-2 py-0.5 rounded-full"
+              style={{ backgroundColor: 'rgba(0, 255, 157, 0.12)' }}>
+              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: '#00FF9D' }} />
+              <Text
+                className="text-[8px] tracking-widest"
+                style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#00FF9D' }}>
+                LIVE
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* ── Overall progress card ── */}
         <View
@@ -523,7 +686,7 @@ export default function DashboardScreen() {
               <StatCard
                 label={t('filterForSale')}
                 value={String(stats.forSaleCount)}
-                sub="⚡ sats"
+                sub={btcRates ? `₿ $${Math.round((1 / 100_000_000) * btcRates.usd * 100_000).toLocaleString()}/100k sats` : '⚡ sats'}
                 accent="#00FF9D"
                 icon="storefront-outline"
                 onPress={() => router.push('/my-sales')}
@@ -717,19 +880,7 @@ export default function DashboardScreen() {
           )}
         </View>
 
-        {/* ── Quick actions ── */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          className="rounded-2xl py-5 items-center justify-center mb-3"
-          style={{ backgroundColor: '#00E5FF' }}
-          onPress={() => router.push('/add-book')}>
-          <Text
-            className="text-[#0A0F1A] text-base tracking-[0.15em]"
-            style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-            + {t('addBook')}
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
+    </KeyboardWrapper>
 
       {/* ── Export (nsec Backup) Modal ── */}
       <Modal
@@ -1138,10 +1289,18 @@ export default function DashboardScreen() {
                 className="text-neon-cyan font-bold text-lg text-center"
                 style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#00E5FF' }}
               >
-                Bu Aralıkta Toplam: {totalReadInRange.toLocaleString()} {t('pagesRead')}
+                {t('rangeTotal').replace('{{count}}', totalReadInRange.toLocaleString())}
               </Text>
             </View>
 
+            {totalReadInRange === 0 ? (
+              <View style={{ height: 180, justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="book-outline" size={36} color="#1a2235" />
+                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#4A5568', fontSize: 12, textAlign: 'center' }}>
+                  {t('noReadingLogInRange')}
+                </Text>
+              </View>
+            ) : (
             <View style={{ alignItems: 'center', height: 220, marginLeft: -10 }}>
               <BarChart
                 data={currentReadData}
@@ -1189,9 +1348,10 @@ export default function DashboardScreen() {
                 }}
               />
             </View>
+            )}
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </>
   );
 }

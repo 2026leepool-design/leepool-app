@@ -4,16 +4,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardWrapper } from '@/components/KeyboardWrapper';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
 import { generateAndSaveKeys, importNsecKey } from '@/utils/nostr';
@@ -180,16 +178,9 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#0A0F1A' }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 32 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
-
-          {/* ── Logo ── */}
+    <KeyboardWrapper
+      contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 32 }}>
+      {/* ── Logo ── */}
           <View style={{ alignItems: 'center', marginBottom: 40 }}>
             <View
               style={{
@@ -502,8 +493,6 @@ export default function LoginScreen() {
               </View>
             </View>
           )}
-        </ScrollView>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+    </KeyboardWrapper>
   );
 }

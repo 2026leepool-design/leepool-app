@@ -22,7 +22,7 @@
         "INTERNET"
       ],
       "edgeToEdgeEnabled": true,
-      "softwareKeyboardLayoutMode": "resize",
+      "softwareKeyboardLayoutMode": "pan",
       "predictiveBackGestureEnabled": false,
       "package": "com.leepool.LeePool"
     },

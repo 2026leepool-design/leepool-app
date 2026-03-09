@@ -176,6 +176,108 @@ export async function fetchBooksByAuthor(author: string): Promise<AuthorBookItem
 }
 
 /**
+ * Enhanced search that returns multiple potential book matches.
+ */
+export async function searchBooksMulti(
+  isbn: string,
+  title: string,
+  author: string
+): Promise<SmartBookData[]> {
+  const cleanIsbn = String(isbn).trim().replace(/\D/g, '');
+  const cleanTitle = title.trim();
+  const cleanAuthor = author.trim();
+  
+  const results: SmartBookData[] = [];
+  const seenIsbns = new Set<string>();
+
+  // Helper to add unique results
+  const addResult = (item: SmartBookData) => {
+    const key = `${item.title}-${item.author}`.toLowerCase();
+    if (!seenIsbns.has(key)) {
+      results.push(item);
+      seenIsbns.add(key);
+    }
+  };
+
+  // 1. Try ISBN if provided
+  if (cleanIsbn) {
+    try {
+      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`);
+      const data = await res.json();
+      if (data.items) {
+        for (const item of data.items) {
+          const v = item.volumeInfo || {};
+          let cover = v.imageLinks?.thumbnail || null;
+          if (cover?.startsWith('http:')) cover = 'https:' + cover.slice(5);
+          const ids = v.industryIdentifiers || [];
+          const id13 = ids.find((x: any) => x.type === 'ISBN_13')?.identifier || ids.find((x: any) => x.type === 'ISBN_10')?.identifier || cleanIsbn;
+          addResult({
+            title: v.title || '',
+            author: (v.authors?.[0] || '').trim(),
+            cover_url: cover,
+            totalPages: v.pageCount || 0,
+            isbn: id13,
+            first_publish_year: parseYearFromDate(v.publishedDate),
+            translator: null,
+            original_title: null,
+          });
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Try Title + Author
+  const query = `${cleanTitle} ${cleanAuthor}`.trim();
+  if (query) {
+    try {
+      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5`);
+      const data = await res.json();
+      if (data.items) {
+        for (const item of data.items) {
+          const v = item.volumeInfo || {};
+          let cover = v.imageLinks?.thumbnail || null;
+          if (cover?.startsWith('http:')) cover = 'https:' + cover.slice(5);
+          const ids = v.industryIdentifiers || [];
+          const id13 = ids.find((x: any) => x.type === 'ISBN_13')?.identifier || ids.find((x: any) => x.type === 'ISBN_10')?.identifier || null;
+          addResult({
+            title: v.title || '',
+            author: (v.authors?.[0] || '').trim(),
+            cover_url: cover,
+            totalPages: v.pageCount || 0,
+            isbn: id13,
+            first_publish_year: parseYearFromDate(v.publishedDate),
+            translator: null,
+            original_title: null,
+          });
+        }
+      }
+    } catch {}
+
+    // OpenLibrary multi search
+    try {
+      const olRes = await fetch(`https://openlibrary.org/search.json?title=${encodeURIComponent(cleanTitle)}&author=${encodeURIComponent(cleanAuthor)}&limit=5`);
+      const olData = await olRes.json();
+      if (olData.docs) {
+        for (const d of olData.docs) {
+          addResult({
+            title: d.title || '',
+            author: d.author_name?.[0] || cleanAuthor,
+            cover_url: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg` : null,
+            totalPages: d.number_of_pages_median || 0,
+            isbn: d.isbn?.[0] || null,
+            first_publish_year: d.first_publish_year || null,
+            translator: null,
+            original_title: null,
+          });
+        }
+      }
+    } catch {}
+  }
+
+  return results;
+}
+
+/**
  * Fetches book data with ISBN-first logic, then title+author fallback.
  * Also tries to extract original_title from OpenLibrary work.
  */

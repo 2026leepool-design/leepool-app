@@ -1,15 +1,13 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   Alert,
   ActivityIndicator,
   Modal,
   FlatList,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -18,13 +16,14 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from '@/utils/supabase';
-import { fetchSmartBookData, fetchBooksByAuthor, type AuthorBookItem } from '@/utils/bookApi';
+import { fetchSmartBookData, searchBooksMulti, fetchBooksByAuthor, type AuthorBookItem, type SmartBookData } from '@/utils/bookApi';
 import {
   pickCoverFromCamera,
   pickCoverFromGallery,
   showCoverPickerAlert,
 } from '@/utils/coverPicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardWrapper } from '@/components/KeyboardWrapper';
 
 type BookData = {
   id: string;
@@ -37,6 +36,7 @@ type BookData = {
   translator: string | null;
   first_publish_year: number | null;
   translated_titles: Array<{ lang: string; title: string; isOriginal?: boolean }> | null;
+  lightning_address: string | null;
 };
 
 export default function EditBookScreen() {
@@ -55,6 +55,8 @@ export default function EditBookScreen() {
   const [isAuthorModalVisible, setIsAuthorModalVisible] = useState(false);
   const [authorBooks, setAuthorBooks] = useState<AuthorBookItem[]>([]);
   const [isBarcodeScannerVisible, setIsBarcodeScannerVisible] = useState(false);
+  const [searchResults, setSearchResults] = useState<SmartBookData[]>([]);
+  const [isSearchResultModalVisible, setIsSearchResultModalVisible] = useState(false);
 
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -65,6 +67,18 @@ export default function EditBookScreen() {
   const [firstPublishYear, setFirstPublishYear] = useState('');
   const [translatedTitles, setTranslatedTitles] = useState<string>('');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [lightningAddress, setLightningAddress] = useState('');
+
+  const initialValuesRef = useRef<{
+    title: string;
+    author: string;
+    totalPages: string;
+    firstPublishYear: string;
+    translator: string;
+    translatedTitles: string;
+    isbn: string;
+    coverUrl: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -85,15 +99,35 @@ export default function EditBookScreen() {
         if (!error && data) {
           const b = data as BookData;
           setBook(b);
-          setTitle(b.title ?? '');
-          setAuthor(b.author ?? '');
-          setTotalPages(String(b.total_pages ?? ''));
+          const tit = b.title ?? '';
+          const aut = b.author ?? '';
+          const tot = String(b.total_pages ?? '');
+          const fpy = b.first_publish_year ? String(b.first_publish_year) : '';
+          const trn = b.translator ?? '';
+          const ttl = b.translated_titles ? JSON.stringify(b.translated_titles) : '';
+          const isb = b.isbn ?? '';
+          const cov = b.cover_url ?? null;
+          const lig = b.lightning_address ?? '';
+          setTitle(tit);
+          setAuthor(aut);
+          setTotalPages(tot);
           setReadPages(String(b.read_pages ?? 0));
-          setIsbn(b.isbn ?? '');
-          setTranslator(b.translator ?? '');
-          setFirstPublishYear(b.first_publish_year ? String(b.first_publish_year) : '');
-          setTranslatedTitles(b.translated_titles ? JSON.stringify(b.translated_titles) : '');
-          setCoverUrl(b.cover_url ?? null);
+          setIsbn(isb);
+          setTranslator(trn);
+          setFirstPublishYear(fpy);
+          setTranslatedTitles(ttl);
+          setCoverUrl(cov);
+          setLightningAddress(lig);
+          initialValuesRef.current = {
+            title: tit,
+            author: aut,
+            totalPages: tot,
+            firstPublishYear: fpy,
+            translator: trn,
+            translatedTitles: ttl,
+            isbn: isb,
+            coverUrl: cov,
+          };
         }
       } catch {
         // network / unexpected error — book stays null → guard shows error
@@ -142,10 +176,10 @@ export default function EditBookScreen() {
     }
     setSearchingCover(true);
     try {
-      const result = await fetchSmartBookData(isbn.trim(), title.trim(), author.trim());
-      if (result?.cover_url) {
-        setCoverUrl(result.cover_url);
-        Alert.alert(t('coverFoundApplied'));
+      const results = await searchBooksMulti(isbn.trim(), title.trim(), author.trim());
+      if (results.length > 0) {
+        setSearchResults(results);
+        setIsSearchResultModalVisible(true);
       } else {
         Alert.alert(t('noResultsWeb'));
       }
@@ -179,6 +213,7 @@ export default function EditBookScreen() {
     }
     if (result.cover_url) { setCoverUrl(result.cover_url); updates.coverUrl = true; }
     setApiUpdatedFields((prev) => ({ ...prev, ...updates }));
+    setIsSearchResultModalVisible(false);
     return updates;
   }, []);
 
@@ -194,12 +229,10 @@ export default function EditBookScreen() {
     }
     setSearchingDetails(true);
     try {
-      const result = await fetchSmartBookData(isbn.trim(), title.trim(), author.trim());
-      if (result) {
-        const updates = applyBookData(result);
-        if (Object.keys(updates).length === 0) {
-          Alert.alert(t('noResultsWeb'));
-        }
+      const results = await searchBooksMulti(isbn.trim(), title.trim(), author.trim());
+      if (results.length > 0) {
+        setSearchResults(results);
+        setIsSearchResultModalVisible(true);
       } else {
         // Fallback: search by author
         const authorQuery = author.trim();
@@ -220,7 +253,7 @@ export default function EditBookScreen() {
     } finally {
       setSearchingDetails(false);
     }
-  }, [title, author, isbn, t, applyBookData]);
+  }, [title, author, isbn, t]);
 
   const handleUpdate = useCallback(async () => {
     if (!id) return;
@@ -246,6 +279,9 @@ export default function EditBookScreen() {
 
     setSaving(true);
     try {
+      const oldRead = book?.read_pages ?? 0;
+      const pagesAdded = read - oldRead;
+
       const payload = {
         title: title.trim(),
         author: author.trim(),
@@ -256,6 +292,7 @@ export default function EditBookScreen() {
         first_publish_year: year && !isNaN(year) ? year : null,
         translated_titles: parsedTitles,
         cover_url: coverUrl || null,
+        lightning_address: lightningAddress.trim() || null,
         status: read >= total ? 'read' : 'bought',
       };
 
@@ -265,13 +302,46 @@ export default function EditBookScreen() {
         .eq('id', id);
 
       if (error) throw error;
+
+      if (pagesAdded > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id) {
+          await supabase.from('reading_logs').insert({
+            user_id: user.id,
+            book_id: id,
+            pages_read: pagesAdded,
+          });
+        }
+      }
+
       router.back();
     } catch (err: unknown) {
       Alert.alert(t('error'), (err as Error)?.message ?? 'Unknown error');
     } finally {
       setSaving(false);
     }
-  }, [id, title, author, totalPages, readPages, isbn, translator, firstPublishYear, translatedTitles, coverUrl, t, router]);
+  }, [id, title, author, totalPages, readPages, isbn, translator, firstPublishYear, translatedTitles, coverUrl, lightningAddress, t, router]);
+
+  const handleRollbackField = useCallback((field: keyof NonNullable<typeof initialValuesRef.current>) => {
+    const initial = initialValuesRef.current;
+    if (!initial) return;
+    switch (field) {
+      case 'title': setTitle(initial.title); break;
+      case 'author': setAuthor(initial.author); break;
+      case 'totalPages': setTotalPages(initial.totalPages); break;
+      case 'firstPublishYear': setFirstPublishYear(initial.firstPublishYear); break;
+      case 'translator': setTranslator(initial.translator); break;
+      case 'translatedTitles': setTranslatedTitles(initial.translatedTitles); break;
+      case 'isbn': setIsbn(initial.isbn); break;
+      case 'coverUrl': setCoverUrl(initial.coverUrl); break;
+      default: break;
+    }
+    setApiUpdatedFields((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }, []);
 
   const inputStyle = (field: string) => {
     const isApiUpdated = apiUpdatedFields[field];
@@ -282,6 +352,19 @@ export default function EditBookScreen() {
       fontFamily: 'SpaceGrotesk_400Regular',
     };
   };
+
+  const RollbackButton = useCallback(({ field }: { field: keyof NonNullable<typeof initialValuesRef.current> }) => {
+    if (!apiUpdatedFields[field]) return null;
+    return (
+      <TouchableOpacity
+        onPress={() => handleRollbackField(field)}
+        activeOpacity={0.7}
+        className="ml-2 w-9 h-9 rounded-lg items-center justify-center"
+        style={{ backgroundColor: 'rgba(136, 146, 176, 0.2)' }}>
+        <Ionicons name="arrow-undo-outline" size={18} color="#8892B0" />
+      </TouchableOpacity>
+    );
+  }, [apiUpdatedFields, handleRollbackField]);
 
   const totalNum = parseInt(totalPages, 10) || 0;
   const readNum = parseInt(readPages, 10) || 0;
@@ -349,10 +432,10 @@ export default function EditBookScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
+    <>
+    <KeyboardWrapper
+      edges={['top']}
+      contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingBottom: 40 }}>
         {/* ── Back button (top left) ── */}
         <View className="px-5 py-3">
           <TouchableOpacity
@@ -367,10 +450,6 @@ export default function EditBookScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingBottom: 40 }}
-          keyboardShouldPersistTaps="handled">
         {/* ── Header + Cover ── */}
         <View className="py-2 items-center">
           <Text
@@ -423,6 +502,15 @@ export default function EditBookScreen() {
                 <Ionicons name="globe-outline" size={20} color="#0A0F1A" />
               )}
             </TouchableOpacity>
+            {apiUpdatedFields.coverUrl && (
+              <TouchableOpacity
+                onPress={() => handleRollbackField('coverUrl')}
+                activeOpacity={0.7}
+                className="absolute bottom-2 left-2 w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: 'rgba(136, 146, 176, 0.9)' }}>
+                <Ionicons name="arrow-undo-outline" size={20} color="#E2E8F0" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -439,16 +527,34 @@ export default function EditBookScreen() {
             style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
             {t('pagesReadInput')}
           </Text>
-          <TextInput
-            className="rounded-xl px-4 py-4 text-white text-base mb-4"
-            style={inputStyle('readPages')}
-            placeholderTextColor="#4A5568"
-            value={readPages}
-            onChangeText={setReadPages}
-            onFocus={() => setFocusField('readPages')}
-            onBlur={() => setFocusField(null)}
-            keyboardType="numeric"
-          />
+          <View className="relative mb-4 justify-center">
+            <TextInput
+              className="rounded-xl pl-4 pr-12 py-4 text-white text-base"
+              style={[
+                inputStyle('readPages'),
+                { backgroundColor: '#0F172A' }
+              ]}
+              placeholderTextColor="#4A5568"
+              value={readPages}
+              onChangeText={setReadPages}
+              onFocus={() => setFocusField('readPages')}
+              onBlur={() => setFocusField(null)}
+              keyboardType="numeric"
+            />
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleUpdate}
+              disabled={saving}
+              className="absolute right-2 w-10 h-10 rounded-xl items-center justify-center"
+              style={{ backgroundColor: 'rgba(0, 229, 255, 0.1)' }}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#00E5FF" />
+              ) : (
+                <Ionicons name="save" size={20} color="#00E5FF" />
+              )}
+            </TouchableOpacity>
+          </View>
           <View className="flex-row justify-between items-center mb-2">
             <Text
               className="text-[#8892B0] text-[10px] tracking-widest"
@@ -518,15 +624,18 @@ export default function EditBookScreen() {
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
               {t('bookTitle')}
             </Text>
-            <TextInput
-              className="rounded-xl px-4 py-3 text-white text-base"
-              style={inputStyle('title')}
-              placeholderTextColor="#4A5568"
-              value={title}
-              onChangeText={setTitle}
-              onFocus={() => setFocusField('title')}
-              onBlur={() => setFocusField(null)}
-            />
+            <View className="flex-row items-center">
+              <TextInput
+                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                style={inputStyle('title')}
+                placeholderTextColor="#4A5568"
+                value={title}
+                onChangeText={setTitle}
+                onFocus={() => setFocusField('title')}
+                onBlur={() => setFocusField(null)}
+              />
+              <RollbackButton field="title" />
+            </View>
           </View>
 
           <View className="mb-4">
@@ -535,15 +644,18 @@ export default function EditBookScreen() {
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
               {t('author')}
             </Text>
-            <TextInput
-              className="rounded-xl px-4 py-3 text-white text-base"
-              style={inputStyle('author')}
-              placeholderTextColor="#4A5568"
-              value={author}
-              onChangeText={setAuthor}
-              onFocus={() => setFocusField('author')}
-              onBlur={() => setFocusField(null)}
-            />
+            <View className="flex-row items-center">
+              <TextInput
+                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                style={inputStyle('author')}
+                placeholderTextColor="#4A5568"
+                value={author}
+                onChangeText={setAuthor}
+                onFocus={() => setFocusField('author')}
+                onBlur={() => setFocusField(null)}
+              />
+              <RollbackButton field="author" />
+            </View>
           </View>
 
           <View className="mb-4">
@@ -552,16 +664,19 @@ export default function EditBookScreen() {
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
               {t('totalPages')}
             </Text>
-            <TextInput
-              className="rounded-xl px-4 py-3 text-white text-base"
-              style={inputStyle('totalPages')}
-              placeholderTextColor="#4A5568"
-              value={totalPages}
-              onChangeText={setTotalPages}
-              onFocus={() => setFocusField('totalPages')}
-              onBlur={() => setFocusField(null)}
-              keyboardType="numeric"
-            />
+            <View className="flex-row items-center">
+              <TextInput
+                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                style={inputStyle('totalPages')}
+                placeholderTextColor="#4A5568"
+                value={totalPages}
+                onChangeText={setTotalPages}
+                onFocus={() => setFocusField('totalPages')}
+                onBlur={() => setFocusField(null)}
+                keyboardType="numeric"
+              />
+              <RollbackButton field="totalPages" />
+            </View>
           </View>
 
           <View className="mb-4">
@@ -570,9 +685,9 @@ export default function EditBookScreen() {
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
               {t('isbn')}
             </Text>
-            <View className="flex-row items-center relative">
+            <View className="flex-row items-center">
               <TextInput
-                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                className="flex-1 min-w-0 rounded-xl px-4 py-3 text-white text-base"
                 style={inputStyle('isbn')}
                 placeholderTextColor="#4A5568"
                 value={isbn}
@@ -581,11 +696,13 @@ export default function EditBookScreen() {
                 onBlur={() => setFocusField(null)}
                 keyboardType="default"
               />
+              <RollbackButton field="isbn" />
               <TouchableOpacity
                 onPress={handleOpenScanner}
                 activeOpacity={0.7}
-                className="absolute right-3">
-                <Ionicons name="barcode-outline" size={24} color="#00E5FF" />
+                className="ml-2 w-9 h-9 rounded-lg items-center justify-center"
+                style={{ backgroundColor: 'rgba(0, 229, 255, 0.15)' }}>
+                <Ionicons name="barcode-outline" size={22} color="#00E5FF" />
               </TouchableOpacity>
             </View>
           </View>
@@ -596,33 +713,60 @@ export default function EditBookScreen() {
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
               {t('firstPublishYear')}
             </Text>
-            <TextInput
-              className="rounded-xl px-4 py-3 text-white text-base"
-              style={inputStyle('firstPublishYear')}
-              placeholderTextColor="#4A5568"
-              value={firstPublishYear}
-              onChangeText={setFirstPublishYear}
-              onFocus={() => setFocusField('firstPublishYear')}
-              onBlur={() => setFocusField(null)}
-              keyboardType="numeric"
-            />
+            <View className="flex-row items-center">
+              <TextInput
+                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                style={inputStyle('firstPublishYear')}
+                placeholderTextColor="#4A5568"
+                value={firstPublishYear}
+                onChangeText={setFirstPublishYear}
+                onFocus={() => setFocusField('firstPublishYear')}
+                onBlur={() => setFocusField(null)}
+                keyboardType="numeric"
+              />
+              <RollbackButton field="firstPublishYear" />
+            </View>
+          </View>
+
+          <View className="mb-4">
+            <Text
+              className="text-[#8892B0] text-[10px] mb-2 tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('translator')}
+            </Text>
+            <View className="flex-row items-center">
+              <TextInput
+                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                style={inputStyle('translator')}
+                placeholderTextColor="#4A5568"
+                value={translator}
+                onChangeText={setTranslator}
+                onFocus={() => setFocusField('translator')}
+                onBlur={() => setFocusField(null)}
+                keyboardType="default"
+              />
+              <RollbackButton field="translator" />
+            </View>
           </View>
 
           <View>
             <Text
               className="text-[#8892B0] text-[10px] mb-2 tracking-widest"
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              {t('translator')}
+              {t('lightningAddress')}
             </Text>
             <TextInput
               className="rounded-xl px-4 py-3 text-white text-base"
-              style={inputStyle('translator')}
+              style={inputStyle('lightningAddress')}
               placeholderTextColor="#4A5568"
-              value={translator}
-              onChangeText={setTranslator}
-              onFocus={() => setFocusField('translator')}
+              placeholder={t('lightningAddressPlaceholder')}
+              value={lightningAddress}
+              onChangeText={setLightningAddress}
+              onFocus={() => setFocusField('lightningAddress')}
               onBlur={() => setFocusField(null)}
-              keyboardType="default"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
             />
           </View>
         </View>
@@ -640,7 +784,125 @@ export default function EditBookScreen() {
             {saving ? '...' : t('update')}
           </Text>
         </TouchableOpacity>
-        </ScrollView>
+    </KeyboardWrapper>
+
+        {/* ── Search Result Selection Modal ── */}
+        <Modal
+          visible={isSearchResultModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setIsSearchResultModalVisible(false)}>
+          <View
+            className="flex-1 justify-end"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.8)' }}>
+            <View
+              className="rounded-t-3xl px-5 pt-5 pb-8"
+              style={{
+                backgroundColor: '#131B2B',
+                borderTopWidth: 1,
+                borderTopColor: 'rgba(0, 229, 255, 0.2)',
+                maxHeight: '80%',
+              }}>
+              {/* Header */}
+              <View className="flex-row items-center justify-between mb-4">
+                <View>
+                  <Text
+                    className="text-[#00E5FF] text-lg tracking-widest"
+                    style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                    {t('selectBook').toUpperCase()}
+                  </Text>
+                  <Text
+                    className="text-[#8892B0] text-[10px] tracking-widest mt-1"
+                    style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                    {t('selectFoundBook')}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setIsSearchResultModalVisible(false)}
+                  className="w-10 h-10 rounded-full items-center justify-center"
+                  style={{ backgroundColor: 'rgba(136, 146, 176, 0.15)' }}>
+                  <Ionicons name="close" size={24} color="#8892B0" />
+                </TouchableOpacity>
+              </View>
+
+              {/* List */}
+              <FlatList
+                data={searchResults}
+                keyExtractor={(item, index) => `${item.isbn || item.title}-${index}`}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 20 }}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    activeOpacity={0.75}
+                    onPress={() => applyBookData(item)}
+                    className="flex-row items-center rounded-2xl p-3 mb-3"
+                    style={{
+                      backgroundColor: 'rgba(0, 229, 255, 0.05)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(0, 229, 255, 0.1)',
+                    }}>
+                    {/* Mini Cover */}
+                    <View
+                      className="rounded-lg overflow-hidden mr-4"
+                      style={{ width: 50, height: 70, backgroundColor: '#0A0F1A' }}>
+                      {item.cover_url ? (
+                        <Image
+                          source={{ uri: item.cover_url }}
+                          style={{ width: 50, height: 70 }}
+                          contentFit="cover"
+                        />
+                      ) : (
+                        <View className="flex-1 items-center justify-center">
+                          <Ionicons name="book-outline" size={24} color="#4A5568" />
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Info */}
+                    <View className="flex-1">
+                      <Text
+                        className="text-white text-sm"
+                        style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
+                        numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      <Text
+                        className="text-[#8892B0] text-xs mt-1"
+                        style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                        {item.author}
+                      </Text>
+                      {item.first_publish_year ? (
+                        <Text
+                          className="text-[#4A5568] text-[10px] mt-1"
+                          style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                          {item.first_publish_year}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="rgba(0, 229, 255, 0.3)" />
+                  </TouchableOpacity>
+                )}
+              />
+
+              {/* Cancel Button */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setIsSearchResultModalVisible(false)}
+                className="mt-2 rounded-2xl py-4 items-center justify-center"
+                style={{
+                  borderWidth: 1,
+                  borderColor: 'rgba(136, 146, 176, 0.3)',
+                  backgroundColor: 'rgba(136, 146, 176, 0.1)',
+                }}>
+                <Text
+                  className="text-[#8892B0] text-sm tracking-widest"
+                  style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                  {t('cancel').toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         {/* ── Author Books Fallback Modal ── */}
       <Modal
@@ -785,7 +1047,6 @@ export default function EditBookScreen() {
           </TouchableOpacity>
         </View>
       </Modal>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+    </>
   );
 }
