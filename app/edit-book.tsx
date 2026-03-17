@@ -261,15 +261,18 @@ export default function EditBookScreen() {
   }, [digitsOnly, totalNum]);
 
   useEffect(() => {
-    if (readNum > 0 && !readingStartedAt) {
-      setReadingStartedAt(new Date());
+    if (readNum > 0) {
+      setReadingStartedAt((prev) => prev ?? new Date());
     }
+
     if (totalNum > 0 && readNum >= totalNum) {
-      if (!readingFinishedAt) setReadingFinishedAt(new Date());
-    } else if (readingFinishedAt) {
-      setReadingFinishedAt(null);
+      setReadingFinishedAt((prev) => prev ?? new Date());
+      return;
     }
-  }, [readNum, totalNum, readingStartedAt, readingFinishedAt]);
+
+    // If user moves progress back under total pages, clear finished date
+    setReadingFinishedAt(null);
+  }, [readNum, totalNum]);
 
   const formatDate = useCallback((d: Date) => {
     const dd = String(d.getDate()).padStart(2, '0');
@@ -642,7 +645,7 @@ export default function EditBookScreen() {
               maximumValue={sliderMax}
               step={1}
               value={readNum}
-              onValueChange={(v) => setReadPages(String(v))}
+              onValueChange={(v) => handleReadPagesChange(String(v))}
               minimumTrackTintColor="#00E5FF"
               maximumTrackTintColor="rgba(136, 146, 176, 0.25)"
               thumbTintColor="#00E5FF"

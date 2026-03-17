@@ -14,7 +14,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { KeyboardWrapper } from '@/components/KeyboardWrapper';
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal';
 import { analyzeBookCover } from '@/utils/api';
-import { getCurrentDevicePushToken, registerForPushNotificationsAsync } from '@/utils/notifications';
+import { registerForPushNotificationsAsync } from '@/utils/notifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -317,17 +317,18 @@ export default function DashboardScreen() {
   const handleSignOut = async () => {
     const doSignOut = async () => {
       try {
-        const existing = getCurrentDevicePushToken();
-        const tokenToDelete = existing ?? (await registerForPushNotificationsAsync());
-        if (tokenToDelete) {
-          const { error } = await supabase.from('push_tokens').delete().match({ token: tokenToDelete });
-          if (error) console.error('Token veritabanından silinemedi:', error.message);
-        } else {
-          const { data } = await supabase.auth.getSession();
-          const userId = data?.session?.user?.id ?? null;
-          if (userId) {
-            const { error } = await supabase.from('push_tokens').delete().match({ user_id: userId });
-            if (error) console.error('Token veritabanından silinemedi:', error.message);
+        if (Platform.OS !== 'web') {
+          try {
+            const tokenToDelete = await registerForPushNotificationsAsync();
+            if (tokenToDelete) {
+              const { error } = await supabase
+                .from('push_tokens')
+                .delete()
+                .match({ token: tokenToDelete });
+              if (error) console.error('Token veritabanından silinemedi:', error.message);
+            }
+          } catch (error) {
+            console.log('Token silinirken hata:', error);
           }
         }
         await supabase.auth.signOut();
@@ -557,6 +558,11 @@ export default function DashboardScreen() {
             style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#E2E8F0' }}
             placeholder={t('searchPlaceholder')}
             placeholderTextColor="#4A5568"
+            autoComplete="off"
+            textContentType="none"
+            importantForAutofill="no"
+            autoCorrect={false}
+            spellCheck={false}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmitEditing={() => {

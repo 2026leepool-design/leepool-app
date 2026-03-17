@@ -3,6 +3,14 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+
+import { LogBox } from 'react-native';
+
+// Expo SDK 53'ün aşırı hassas Android Push Notification uyarısını UI'dan gizliyoruz
+LogBox.ignoreLogs([
+  'expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go',
+]);
+
 // Expo Go'da mıyız kontrolünü en tepeye, global bir değişkene alıyoruz
 const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
 
