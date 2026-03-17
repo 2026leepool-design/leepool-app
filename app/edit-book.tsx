@@ -15,6 +15,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import Slider from '@react-native-community/slider';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '@/utils/supabase';
 import { fetchSmartBookData, searchBooksMulti, fetchBooksByAuthor, type AuthorBookItem, type SmartBookData } from '@/utils/bookApi';
 import {
@@ -31,6 +33,8 @@ type BookData = {
   author: string;
   total_pages: number;
   read_pages: number;
+  reading_started_at: string | null;
+  reading_finished_at: string | null;
   cover_url: string | null;
   isbn: string | null;
   translator: string | null;
@@ -68,6 +72,9 @@ export default function EditBookScreen() {
   const [translatedTitles, setTranslatedTitles] = useState<string>('');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [lightningAddress, setLightningAddress] = useState('');
+  const [readingStartedAt, setReadingStartedAt] = useState<Date | null>(null);
+  const [readingFinishedAt, setReadingFinishedAt] = useState<Date | null>(null);
+  const [datePickerTarget, setDatePickerTarget] = useState<'started' | 'finished' | null>(null);
 
   const initialValuesRef = useRef<{
     title: string;
@@ -108,6 +115,8 @@ export default function EditBookScreen() {
           const isb = b.isbn ?? '';
           const cov = b.cover_url ?? null;
           const lig = b.lightning_address ?? '';
+          const rs = b.reading_started_at ? new Date(b.reading_started_at) : null;
+          const rf = b.reading_finished_at ? new Date(b.reading_finished_at) : null;
           setTitle(tit);
           setAuthor(aut);
           setTotalPages(tot);
@@ -118,6 +127,8 @@ export default function EditBookScreen() {
           setTranslatedTitles(ttl);
           setCoverUrl(cov);
           setLightningAddress(lig);
+          setReadingStartedAt(rs);
+          setReadingFinishedAt(rf);
           initialValuesRef.current = {
             title: tit,
             author: aut,
@@ -222,6 +233,51 @@ export default function EditBookScreen() {
     setIsAuthorModalVisible(false);
   }, [applyBookData]);
 
+  const digitsOnly = useCallback((text: string) => text.replace(/[^0-9]/g, ''), []);
+
+  const totalNum = parseInt(totalPages, 10) || 0;
+  const readNum = parseInt(readPages, 10) || 0;
+  const sliderMax = totalNum > 0 ? totalNum : 100;
+
+  const handleTotalPagesChange = useCallback((txt: string) => {
+    const clean = digitsOnly(txt);
+    setTotalPages(clean);
+    const nextTotal = parseInt(clean, 10) || 0;
+    if (nextTotal > 0) {
+      const currentRead = parseInt(readPages, 10) || 0;
+      if (currentRead > nextTotal) setReadPages(String(nextTotal));
+    }
+  }, [digitsOnly, readPages]);
+
+  const handleReadPagesChange = useCallback((txt: string) => {
+    const clean = digitsOnly(txt);
+    if (!clean) {
+      setReadPages('');
+      return;
+    }
+    const num = parseInt(clean, 10) || 0;
+    const capped = totalNum > 0 ? Math.min(num, totalNum) : num;
+    setReadPages(String(capped));
+  }, [digitsOnly, totalNum]);
+
+  useEffect(() => {
+    if (readNum > 0 && !readingStartedAt) {
+      setReadingStartedAt(new Date());
+    }
+    if (totalNum > 0 && readNum >= totalNum) {
+      if (!readingFinishedAt) setReadingFinishedAt(new Date());
+    } else if (readingFinishedAt) {
+      setReadingFinishedAt(null);
+    }
+  }, [readNum, totalNum, readingStartedAt, readingFinishedAt]);
+
+  const formatDate = useCallback((d: Date) => {
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}.${mm}.${yyyy}`;
+  }, []);
+
   const handleSearchDetails = useCallback(async () => {
     if (!title.trim() && !author.trim() && !isbn.trim()) {
       Alert.alert(t('error'), t('fillAllFields'));
@@ -287,6 +343,8 @@ export default function EditBookScreen() {
         author: author.trim(),
         total_pages: total,
         read_pages: read,
+        reading_started_at: readingStartedAt ? readingStartedAt.toISOString() : null,
+        reading_finished_at: readingFinishedAt ? readingFinishedAt.toISOString() : null,
         isbn: isbn.trim() || null,
         translator: translator.trim() || null,
         first_publish_year: year && !isNaN(year) ? year : null,
@@ -320,7 +378,7 @@ export default function EditBookScreen() {
     } finally {
       setSaving(false);
     }
-  }, [id, title, author, totalPages, readPages, isbn, translator, firstPublishYear, translatedTitles, coverUrl, lightningAddress, t, router]);
+  }, [id, title, author, totalPages, readPages, isbn, translator, firstPublishYear, translatedTitles, coverUrl, lightningAddress, readingStartedAt, readingFinishedAt, t, router]);
 
   const handleRollbackField = useCallback((field: keyof NonNullable<typeof initialValuesRef.current>) => {
     const initial = initialValuesRef.current;
@@ -366,8 +424,6 @@ export default function EditBookScreen() {
     );
   }, [apiUpdatedFields, handleRollbackField]);
 
-  const totalNum = parseInt(totalPages, 10) || 0;
-  const readNum = parseInt(readPages, 10) || 0;
   const progressPercent =
     totalNum > 0 ? Math.min(100, Math.round((readNum / totalNum) * 100)) : 0;
 
@@ -536,7 +592,7 @@ export default function EditBookScreen() {
               ]}
               placeholderTextColor="#4A5568"
               value={readPages}
-              onChangeText={setReadPages}
+              onChangeText={handleReadPagesChange}
               onFocus={() => setFocusField('readPages')}
               onBlur={() => setFocusField(null)}
               keyboardType="numeric"
@@ -579,6 +635,72 @@ export default function EditBookScreen() {
               }}
             />
           </View>
+
+          <View className="mt-3">
+            <Slider
+              minimumValue={0}
+              maximumValue={sliderMax}
+              step={1}
+              value={readNum}
+              onValueChange={(v) => setReadPages(String(v))}
+              minimumTrackTintColor="#00E5FF"
+              maximumTrackTintColor="rgba(136, 146, 176, 0.25)"
+              thumbTintColor="#00E5FF"
+            />
+          </View>
+
+          <View className="flex-row gap-3 mt-3">
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setDatePickerTarget('started')}
+              className="flex-1 rounded-xl px-4 py-3"
+              style={{
+                backgroundColor: '#0F172A',
+                borderWidth: 1,
+                borderColor: 'rgba(0, 229, 255, 0.2)',
+              }}>
+              <Text className="text-[#8892B0] text-[10px] tracking-widest" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                {t('startedReading')}
+              </Text>
+              <Text className="text-[#00E5FF] text-sm mt-1" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                {readingStartedAt ? formatDate(readingStartedAt) : t('notSpecified')}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setDatePickerTarget('finished')}
+              className="flex-1 rounded-xl px-4 py-3"
+              style={{
+                backgroundColor: '#0F172A',
+                borderWidth: 1,
+                borderColor: 'rgba(0, 229, 255, 0.2)',
+              }}>
+              <Text className="text-[#8892B0] text-[10px] tracking-widest" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                {t('finishedReading')}
+              </Text>
+              <Text className="text-[#00E5FF] text-sm mt-1" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                {readingFinishedAt ? formatDate(readingFinishedAt) : t('notSpecified')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {datePickerTarget && (
+            <DateTimePicker
+              value={(datePickerTarget === 'started' ? readingStartedAt : readingFinishedAt) ?? new Date()}
+              mode="date"
+              display="default"
+              onChange={(event, selectedDate) => {
+                if (event.type !== 'set' || !selectedDate) {
+                  setDatePickerTarget(null);
+                  return;
+                }
+                if (datePickerTarget === 'started') setReadingStartedAt(selectedDate);
+                if (datePickerTarget === 'finished') setReadingFinishedAt(selectedDate);
+                setDatePickerTarget(null);
+              }}
+            />
+          )}
         </View>
 
         {/* ── Details form ── */}
@@ -670,7 +792,7 @@ export default function EditBookScreen() {
                 style={inputStyle('totalPages')}
                 placeholderTextColor="#4A5568"
                 value={totalPages}
-                onChangeText={setTotalPages}
+                onChangeText={handleTotalPagesChange}
                 onFocus={() => setFocusField('totalPages')}
                 onBlur={() => setFocusField(null)}
                 keyboardType="numeric"

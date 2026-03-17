@@ -14,6 +14,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { KeyboardWrapper } from '@/components/KeyboardWrapper';
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal';
 import { analyzeBookCover } from '@/utils/api';
+import { getCurrentDevicePushToken, registerForPushNotificationsAsync } from '@/utils/notifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -316,6 +317,19 @@ export default function DashboardScreen() {
   const handleSignOut = async () => {
     const doSignOut = async () => {
       try {
+        const existing = getCurrentDevicePushToken();
+        const tokenToDelete = existing ?? (await registerForPushNotificationsAsync());
+        if (tokenToDelete) {
+          const { error } = await supabase.from('push_tokens').delete().match({ token: tokenToDelete });
+          if (error) console.error('Token veritabanından silinemedi:', error.message);
+        } else {
+          const { data } = await supabase.auth.getSession();
+          const userId = data?.session?.user?.id ?? null;
+          if (userId) {
+            const { error } = await supabase.from('push_tokens').delete().match({ user_id: userId });
+            if (error) console.error('Token veritabanından silinemedi:', error.message);
+          }
+        }
         await supabase.auth.signOut();
         router.replace('/login');
       } catch (err: any) {

@@ -3,6 +3,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useEffect } from 'react';
+import { registerForPushNotificationsAsync } from '@/utils/notifications';
+import { supabase } from '@/utils/supabase';
+import { loadKeys } from '@/utils/nostr';
 
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -10,6 +14,33 @@ export default function TabsLayout() {
 
   const tabBarHeight = Platform.OS === 'ios' ? 80 : 56 + insets.bottom;
   const tabBarPaddingBottom = Platform.OS === 'ios' ? 24 : insets.bottom + 6;
+
+  useEffect(() => {
+    (async () => {
+      const [sessionRes, keys] = await Promise.all([
+        supabase.auth.getSession(),
+        loadKeys(),
+      ]);
+
+      const token = await registerForPushNotificationsAsync();
+      if (token) console.log('EXPO PUSH TOKEN:', token);
+
+      const userId = sessionRes?.data?.session?.user?.id ?? null;
+      const userNpub = keys?.npub ?? null;
+
+      if (token && (userId || userNpub)) {
+        const { error } = await supabase
+          .from('push_tokens')
+          .upsert(
+            { user_id: userId, npub: userNpub, token },
+            { onConflict: 'token' }
+          );
+
+        if (error) console.error('Token veritabanına kaydedilemedi:', error.message);
+        else console.log('Siber-Zırh: Cihaz tokenı başarıyla mühürlendi!');
+      }
+    })();
+  }, []);
 
   return (
     <Tabs
