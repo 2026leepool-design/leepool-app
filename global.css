@@ -1,3 +1,14 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Chrome Password Manager / autofill: arama kutusunu email alanı sanıp beyaz katman basmasın */
+#cyber-search-bar:-webkit-autofill,
+#cyber-search-bar:-webkit-autofill:hover,
+#cyber-search-bar:-webkit-autofill:focus,
+#cyber-search-bar:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #0b0e14 inset !important;
+  -webkit-text-fill-color: #e2e8f0 !important;
+  caret-color: #00e5ff !important;
+  transition: background-color 99999s ease-out 0s;
+}

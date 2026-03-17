@@ -4,7 +4,7 @@ import { fetchBitcoinRates, type BtcRates } from '@/utils/currency';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Alert, Animated, Image, Modal, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -128,7 +128,15 @@ export default function DashboardScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
   const [analyzingCover, setAnalyzingCover] = useState(false);
+  /** Web: Chrome giriş sonrası ilk odaktaki input'a email basmasın — kısa süre readOnly */
+  const [searchWebUnlock, setSearchWebUnlock] = useState(Platform.OS !== 'web');
   const nostrSwipeableRef = useRef<Swipeable>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const id = setTimeout(() => setSearchWebUnlock(true), 450);
+    return () => clearTimeout(id);
+  }, []);
 
   // Chart States
   const [isValueChartVisible, setIsValueChartVisible] = useState(false);
@@ -552,10 +560,43 @@ export default function DashboardScreen() {
         <View
           className="flex-row items-center bg-[#0B0E14] rounded-lg px-3 py-2 mb-4"
           style={{ borderWidth: 1, borderColor: 'rgba(0, 229, 255, 0.5)' }}>
+          {Platform.OS === 'web' ? (
+            <View
+              style={{
+                position: 'absolute',
+                width: 1,
+                height: 1,
+                opacity: 0,
+                overflow: 'hidden',
+                zIndex: -1,
+                left: -2000,
+              }}
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants">
+              <TextInput
+                nativeID="leepool-chrome-decoy-email"
+                autoComplete="username"
+                textContentType="username"
+                keyboardType="email-address"
+                editable={false}
+              />
+              <TextInput
+                nativeID="leepool-chrome-decoy-password"
+                secureTextEntry
+                autoComplete="current-password"
+                textContentType="password"
+                editable={false}
+              />
+            </View>
+          ) : null}
           <Ionicons name="search-outline" size={20} color="#00E5FF" style={{ marginRight: 10 }} />
           <TextInput
             className="flex-1 py-2.5 text-base"
-            style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#E2E8F0' }}
+            style={[
+              { fontFamily: 'SpaceGrotesk_400Regular', color: '#E2E8F0' },
+              Platform.OS === 'web' ? { backgroundColor: '#0B0E14' } : null,
+            ]}
             placeholder={t('searchPlaceholder')}
             placeholderTextColor="#4A5568"
             inputMode="search"
@@ -566,6 +607,16 @@ export default function DashboardScreen() {
             importantForAutofill="no"
             autoCorrect={false}
             spellCheck={false}
+            autoCapitalize="none"
+            {...(Platform.OS === 'web'
+              ? ({
+                  role: 'searchbox',
+                  name: 'leepool_omni_book_search',
+                  'data-form-type': 'other',
+                  'data-lpignore': 'true',
+                  'data-1p-ignore': 'true',
+                } as Record<string, unknown>)
+              : { accessibilityRole: 'search' as const })}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmitEditing={() => {
@@ -573,7 +624,8 @@ export default function DashboardScreen() {
               if (q) router.push({ pathname: '/search', params: { query: q } });
             }}
             returnKeyType="search"
-            editable={!analyzingCover}
+            readOnly={Platform.OS === 'web' && (!searchWebUnlock || analyzingCover)}
+            editable={Platform.OS === 'web' ? searchWebUnlock && !analyzingCover : !analyzingCover}
           />
           <TouchableOpacity
             activeOpacity={0.7}
