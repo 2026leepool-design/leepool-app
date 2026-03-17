@@ -56,6 +56,7 @@ export default function AddBookScreen() {
   const [searching, setSearching] = useState(false);
   const [analyzingCover, setAnalyzingCover] = useState(false);
   const [searchingWeb, setSearchingWeb] = useState(false);
+  const [fieldSearchBusy, setFieldSearchBusy] = useState<'title' | 'author' | null>(null);
   const [apiUpdatedFields, setApiUpdatedFields] = useState<Record<string, boolean>>({});
   const [searchResults, setSearchResults] = useState<SmartBookData[]>([]);
   const [isSearchResultModalVisible, setIsSearchResultModalVisible] = useState(false);
@@ -186,14 +187,58 @@ export default function AddBookScreen() {
         setSearchResults(results);
         setIsSearchResultModalVisible(true);
       } else {
-        Alert.alert(t('noResultsWeb'));
+        Alert.alert(t('noOmniSearchTitle'), t('noOmniSearchMessage'));
       }
     } catch {
-      Alert.alert(t('noResultsWeb'));
+      Alert.alert(t('noOmniSearchTitle'), t('noOmniSearchMessage'));
     } finally {
       setSearchingWeb(false);
     }
   }, [title, author, isbn, t]);
+
+  const handleSearchFromTitleField = useCallback(async () => {
+    const hint = title.trim();
+    if (!hint) {
+      Alert.alert(t('error'), t('fieldSearchNeedTitle'));
+      return;
+    }
+    setFieldSearchBusy('title');
+    try {
+      const results = await searchBooksMulti('', hint, '');
+      if (results.length > 0) {
+        setSearchResults(results);
+        setIsSearchResultModalVisible(true);
+      } else {
+        Alert.alert(t('noOmniSearchTitle'), t('noOmniSearchMessage'));
+      }
+    } catch {
+      Alert.alert(t('noOmniSearchTitle'), t('noOmniSearchMessage'));
+    } finally {
+      setFieldSearchBusy(null);
+    }
+  }, [title, t]);
+
+  const handleSearchFromAuthorField = useCallback(async () => {
+    const hint = author.trim();
+    if (!hint) {
+      Alert.alert(t('error'), t('fieldSearchNeedAuthor'));
+      return;
+    }
+    setFieldSearchBusy('author');
+    try {
+      const results = await searchBooksMulti('', '', hint);
+      if (results.length > 0) {
+        setSearchResults(results);
+        setIsSearchResultModalVisible(true);
+      } else {
+        Alert.alert(t('noOmniSearchTitle'), t('noOmniSearchMessage'));
+      }
+    } catch {
+      Alert.alert(t('noOmniSearchTitle'), t('noOmniSearchMessage'));
+    } finally {
+      setFieldSearchBusy(null);
+    }
+  }, [author, t]);
 
   const handleCoverPress = useCallback(() => {
     showCoverPickerAlert(t, async () => {
@@ -433,15 +478,34 @@ export default function AddBookScreen() {
             style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
             {t('bookTitle')}
           </Text>
-          <TextInput
-            className="rounded-xl px-4 py-4 text-white text-base"
-            style={inputStyle('title')}
-            placeholderTextColor="#4A5568"
-            value={title}
-            onChangeText={setTitle}
-            onFocus={() => setFocusField('title')}
-            onBlur={() => setFocusField(null)}
-          />
+          <View className="flex-row items-stretch gap-2">
+            <TextInput
+              className="flex-1 rounded-xl px-4 py-4 text-white text-base"
+              style={inputStyle('title')}
+              placeholderTextColor="#4A5568"
+              value={title}
+              onChangeText={setTitle}
+              onFocus={() => setFocusField('title')}
+              onBlur={() => setFocusField(null)}
+            />
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => void handleSearchFromTitleField()}
+              disabled={!!fieldSearchBusy || analyzingCover}
+              className="rounded-xl w-14 items-center justify-center"
+              style={{
+                backgroundColor: 'rgba(0, 229, 255, 0.15)',
+                borderWidth: 1,
+                borderColor: 'rgba(0, 229, 255, 0.4)',
+              }}
+              accessibilityLabel={t('search')}>
+              {fieldSearchBusy === 'title' ? (
+                <ActivityIndicator size="small" color="#00E5FF" />
+              ) : (
+                <Ionicons name="search" size={22} color="#00E5FF" />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Author */}
@@ -451,15 +515,34 @@ export default function AddBookScreen() {
             style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
             {t('author')}
           </Text>
-          <TextInput
-            className="rounded-xl px-4 py-4 text-white text-base"
-            style={inputStyle('author')}
-            placeholderTextColor="#4A5568"
-            value={author}
-            onChangeText={setAuthor}
-            onFocus={() => setFocusField('author')}
-            onBlur={() => setFocusField(null)}
-          />
+          <View className="flex-row items-stretch gap-2">
+            <TextInput
+              className="flex-1 rounded-xl px-4 py-4 text-white text-base"
+              style={inputStyle('author')}
+              placeholderTextColor="#4A5568"
+              value={author}
+              onChangeText={setAuthor}
+              onFocus={() => setFocusField('author')}
+              onBlur={() => setFocusField(null)}
+            />
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => void handleSearchFromAuthorField()}
+              disabled={!!fieldSearchBusy || analyzingCover}
+              className="rounded-xl w-14 items-center justify-center"
+              style={{
+                backgroundColor: 'rgba(0, 229, 255, 0.15)',
+                borderWidth: 1,
+                borderColor: 'rgba(0, 229, 255, 0.4)',
+              }}
+              accessibilityLabel={t('search')}>
+              {fieldSearchBusy === 'author' ? (
+                <ActivityIndicator size="small" color="#00E5FF" />
+              ) : (
+                <Ionicons name="search" size={22} color="#00E5FF" />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Total Pages + Current Value */}

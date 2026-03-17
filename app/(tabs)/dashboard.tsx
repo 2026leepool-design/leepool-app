@@ -13,7 +13,7 @@ import { BarChart, LineChart } from 'react-native-gifted-charts';
 import QRCode from 'react-native-qrcode-svg';
 import { KeyboardWrapper } from '@/components/KeyboardWrapper';
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal';
-import { analyzeBookCover } from '@/utils/api';
+import { analyzeBookCover, searchBooksOmni } from '@/utils/api';
 import { registerForPushNotificationsAsync } from '@/utils/notifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -128,6 +128,7 @@ export default function DashboardScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
   const [analyzingCover, setAnalyzingCover] = useState(false);
+  const [omniSearchLoading, setOmniSearchLoading] = useState(false);
   /** Web: Chrome giriş sonrası ilk odaktaki input'a email basmasın — kısa süre readOnly */
   const [searchWebUnlock, setSearchWebUnlock] = useState(Platform.OS !== 'web');
   const nostrSwipeableRef = useRef<Swipeable>(null);
@@ -434,6 +435,25 @@ export default function DashboardScreen() {
     return `${npub.slice(0, 12)}...${npub.slice(-12)}`;
   };
 
+  const runOmniSearchWithApiCheck = useCallback(
+    async (rawQuery: string) => {
+      const q = rawQuery.trim();
+      if (!q) return;
+      setOmniSearchLoading(true);
+      try {
+        const results = await searchBooksOmni(q);
+        if (!results?.length) {
+          Alert.alert(t('noOmniSearchTitle'), t('noOmniSearchMessage'));
+          return;
+        }
+        router.push(`/search?query=${encodeURIComponent(q)}`);
+      } finally {
+        setOmniSearchLoading(false);
+      }
+    },
+    [router, t]
+  );
+
   const handleCoverSearch = useCallback(async () => {
     Alert.alert(t('photoOptions'), '', [
       { text: t('cancel'), style: 'cancel' },
@@ -454,7 +474,7 @@ export default function DashboardScreen() {
             try {
               const raw = result.assets[0].base64;
               const query = await analyzeBookCover(raw);
-              if (query) router.push({ pathname: '/search', params: { query } });
+              if (query) await runOmniSearchWithApiCheck(query);
             } finally {
               setAnalyzingCover(false);
             }
@@ -478,7 +498,7 @@ export default function DashboardScreen() {
             try {
               const raw = result.assets[0].base64;
               const query = await analyzeBookCover(raw);
-              if (query) router.push({ pathname: '/search', params: { query } });
+              if (query) await runOmniSearchWithApiCheck(query);
             } finally {
               setAnalyzingCover(false);
             }
@@ -486,7 +506,7 @@ export default function DashboardScreen() {
         },
       },
     ]);
-  }, [t, router]);
+  }, [t, runOmniSearchWithApiCheck]);
 
   const progressPercent =
     stats.totalPages > 0 ? Math.round((stats.readPages / stats.totalPages) * 100) : 0;
@@ -590,7 +610,11 @@ export default function DashboardScreen() {
               />
             </View>
           ) : null}
-          <Ionicons name="search-outline" size={20} color="#00E5FF" style={{ marginRight: 10 }} />
+          {omniSearchLoading ? (
+            <ActivityIndicator size="small" color="#00E5FF" style={{ marginRight: 10 }} />
+          ) : (
+            <Ionicons name="search-outline" size={20} color="#00E5FF" style={{ marginRight: 10 }} />
+          )}
           <TextInput
             className="flex-1 py-2.5 text-base"
             style={[
@@ -620,17 +644,23 @@ export default function DashboardScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmitEditing={() => {
-              const q = searchQuery.trim();
-              if (q) router.push({ pathname: '/search', params: { query: q } });
+              void runOmniSearchWithApiCheck(searchQuery);
             }}
             returnKeyType="search"
-            readOnly={Platform.OS === 'web' && (!searchWebUnlock || analyzingCover)}
-            editable={Platform.OS === 'web' ? searchWebUnlock && !analyzingCover : !analyzingCover}
+            readOnly={
+              Platform.OS === 'web' &&
+              (!searchWebUnlock || analyzingCover || omniSearchLoading)
+            }
+            editable={
+              Platform.OS === 'web'
+                ? searchWebUnlock && !analyzingCover && !omniSearchLoading
+                : !analyzingCover && !omniSearchLoading
+            }
           />
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => setBarcodeModalVisible(true)}
-            disabled={analyzingCover}
+            disabled={analyzingCover || omniSearchLoading}
             className="w-9 h-9 rounded-lg items-center justify-center mr-1"
             style={{ backgroundColor: 'rgba(0, 229, 255, 0.1)' }}>
             <Ionicons name="barcode-outline" size={20} color="#00E5FF" />
@@ -638,10 +668,10 @@ export default function DashboardScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={handleCoverSearch}
-            disabled={analyzingCover}
+            disabled={analyzingCover || omniSearchLoading}
             className="w-9 h-9 rounded-lg items-center justify-center"
             style={{ backgroundColor: 'rgba(0, 229, 255, 0.1)' }}>
-            {analyzingCover ? (
+            {analyzingCover || omniSearchLoading ? (
               <ActivityIndicator size="small" color="#00E5FF" />
             ) : (
               <Ionicons name="camera-outline" size={20} color="#00E5FF" />
@@ -653,7 +683,8 @@ export default function DashboardScreen() {
           visible={barcodeModalVisible}
           onClose={() => setBarcodeModalVisible(false)}
           onScan={(isbn) => {
-            router.push({ pathname: '/search', params: { query: `isbn:${isbn}` } });
+            setBarcodeModalVisible(false);
+            void runOmniSearchWithApiCheck(`isbn:${isbn}`);
           }}
         />
 

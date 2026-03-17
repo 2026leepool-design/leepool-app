@@ -438,11 +438,11 @@ export default function SynopsisScreen() {
         </Modal>
         </>
       }>
-      {/* ── Back Button ── */}
-      <View className="px-5 py-3">
+      {/* ── Back + Edit ── */}
+      <View className="px-5 py-3 flex-row items-center gap-2 flex-wrap">
         <TouchableOpacity
           onPress={() => router.back()}
-          className="flex-row items-center rounded-xl py-2 pr-4 self-start"
+          className="flex-row items-center rounded-xl py-2 pr-4"
           style={{
             backgroundColor: '#131B2B',
             borderWidth: 1,
@@ -457,6 +457,23 @@ export default function SynopsisScreen() {
             {t('back')}
           </Text>
         </TouchableOpacity>
+        {id ? (
+          <TouchableOpacity
+            onPress={() => router.push({ pathname: '/edit-book', params: { id } })}
+            className="flex-row items-center rounded-xl py-2 px-4 gap-2"
+            style={{
+              backgroundColor: 'rgba(0, 229, 255, 0.12)',
+              borderWidth: 1,
+              borderColor: 'rgba(0, 229, 255, 0.45)',
+            }}>
+            <Ionicons name="create-outline" size={20} color="#00E5FF" />
+            <Text
+              className="text-[#00E5FF] text-sm tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+              {t('editBook')}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* ── Top: Cover + Info ── */}

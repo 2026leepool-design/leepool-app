@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { searchGoogleBooks, type GoogleBookResult } from '@/utils/api';
+import { searchBooksOmni, type GoogleBookResult } from '@/utils/api';
 
 function formatPrice(amount: number, currency: string | null): string {
   const code = (currency ?? 'USD').toUpperCase();
@@ -126,7 +126,7 @@ export default function SearchScreen() {
     }
     setLocalQuery(q);
     setLoading(true);
-    searchGoogleBooks(q)
+    searchBooksOmni(q)
       .then(setResults)
       .finally(() => setLoading(false));
   }, [query]);

@@ -1,3 +1,9 @@
+const BOOKS_FETCH_HEADERS: HeadersInit = {
+  Accept: 'application/json',
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+};
+
 export type BookApiResult = {
   title: string;
   author: string;
@@ -19,7 +25,8 @@ export async function fetchBookByISBN(
   // Stage 1: Google Books
   try {
     const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`
+      `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`,
+      { headers: BOOKS_FETCH_HEADERS }
     );
     const data = (await res.json()) as {
       items?: Array<{
@@ -53,7 +60,8 @@ export async function fetchBookByISBN(
   // Stage 2: OpenLibrary
   try {
     const res = await fetch(
-      `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&jscmd=data&format=json`
+      `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&jscmd=data&format=json`,
+      { headers: BOOKS_FETCH_HEADERS }
     );
     const data = (await res.json()) as Record<
       string,
@@ -135,7 +143,8 @@ export async function fetchBooksByAuthor(author: string): Promise<AuthorBookItem
 
   try {
     const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=inauthor:${encodeURIComponent(cleanAuthor)}&maxResults=10`
+      `https://www.googleapis.com/books/v1/volumes?q=inauthor:${encodeURIComponent(cleanAuthor)}&maxResults=10`,
+      { headers: BOOKS_FETCH_HEADERS }
     );
     const data = (await res.json()) as {
       items?: Array<{
@@ -202,7 +211,10 @@ export async function searchBooksMulti(
   // 1. Try ISBN if provided
   if (cleanIsbn) {
     try {
-      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`);
+      const res = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`,
+        { headers: BOOKS_FETCH_HEADERS }
+      );
       const data = await res.json();
       if (data.items) {
         for (const item of data.items) {
@@ -230,7 +242,10 @@ export async function searchBooksMulti(
   const query = `${cleanTitle} ${cleanAuthor}`.trim();
   if (query) {
     try {
-      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5`);
+      const res = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=10`,
+        { headers: BOOKS_FETCH_HEADERS }
+      );
       const data = await res.json();
       if (data.items) {
         for (const item of data.items) {
@@ -255,13 +270,51 @@ export async function searchBooksMulti(
 
     // OpenLibrary multi search
     try {
-      const olRes = await fetch(`https://openlibrary.org/search.json?title=${encodeURIComponent(cleanTitle)}&author=${encodeURIComponent(cleanAuthor)}&limit=5`);
+      const olRes = await fetch(
+        `https://openlibrary.org/search.json?title=${encodeURIComponent(cleanTitle)}&author=${encodeURIComponent(cleanAuthor)}&limit=8`,
+        { headers: BOOKS_FETCH_HEADERS }
+      );
       const olData = await olRes.json();
       if (olData.docs) {
         for (const d of olData.docs) {
           addResult({
             title: d.title || '',
             author: d.author_name?.[0] || cleanAuthor,
+            cover_url: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg` : null,
+            totalPages: d.number_of_pages_median || 0,
+            isbn: d.isbn?.[0] || null,
+            first_publish_year: d.first_publish_year || null,
+            translator: null,
+            original_title: null,
+          });
+        }
+      }
+    } catch {}
+  }
+
+  // Yedek: Google boş kaldıysa Open Library genel arama (yazar soyadı, tek başlık vb.)
+  const fallbackQ = cleanIsbn || `${cleanTitle} ${cleanAuthor}`.trim();
+  if (results.length === 0 && fallbackQ) {
+    try {
+      const olRes = await fetch(
+        `https://openlibrary.org/search.json?q=${encodeURIComponent(fallbackQ)}&limit=20`,
+        { headers: BOOKS_FETCH_HEADERS }
+      );
+      const olData = (await olRes.json()) as {
+        docs?: Array<{
+          title?: string;
+          author_name?: string[];
+          cover_i?: number;
+          number_of_pages_median?: number;
+          isbn?: string[];
+          first_publish_year?: number;
+        }>;
+      };
+      if (olData.docs) {
+        for (const d of olData.docs) {
+          addResult({
+            title: d.title || '',
+            author: d.author_name?.[0] || cleanAuthor || cleanTitle || '',
             cover_url: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg` : null,
             totalPages: d.number_of_pages_median || 0,
             isbn: d.isbn?.[0] || null,
