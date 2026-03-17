@@ -558,6 +558,9 @@ export default function DashboardScreen() {
             style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#E2E8F0' }}
             placeholder={t('searchPlaceholder')}
             placeholderTextColor="#4A5568"
+            inputMode="search"
+            keyboardType="web-search"
+            nativeID="cyber-search-bar"
             autoComplete="off"
             textContentType="none"
             importantForAutofill="no"
