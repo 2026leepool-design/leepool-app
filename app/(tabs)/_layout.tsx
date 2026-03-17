@@ -48,17 +48,21 @@ export default function TabsLayout() {
 
     let cancelled = false;
     (async () => {
-      const token = await registerForPushNotificationsAsync();
-      if (cancelled || !token) return;
-      console.log('EXPO PUSH TOKEN:', token);
+      try {
+        const token = await registerForPushNotificationsAsync();
+        if (cancelled || !token) return;
+        console.log('EXPO PUSH TOKEN:', token);
 
-      const { error } = await supabase.from('push_tokens').upsert(
-        { user_id: sessionUserId, npub: nostrNpub, token },
-        { onConflict: 'token' }
-      );
+        const { error } = await supabase.from('push_tokens').upsert(
+          { user_id: sessionUserId, npub: nostrNpub, token },
+          { onConflict: 'token' }
+        );
 
-      if (error) console.error('Token veritabanına kaydedilemedi:', error.message);
-      else console.log('Siber-Zırh: Cihaz tokenı başarıyla mühürlendi!');
+        if (error) console.error('Token veritabanına kaydedilemedi:', error.message);
+        else console.log('Siber-Zırh: Cihaz tokenı başarıyla mühürlendi!');
+      } catch (e) {
+        console.error('Push token kayıt akışı hatası:', e);
+      }
     })();
 
     return () => {

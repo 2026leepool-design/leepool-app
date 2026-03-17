@@ -19,6 +19,7 @@ import { supabase } from '@/utils/supabase';
 import { generateBookSynopsis } from '@/utils/gemini';
 import { loadKeys } from '@/utils/nostr';
 import { payLightningInvoice } from '@/utils/lightning';
+import { sendPushNotification } from '@/utils/sendPush';
 import { fetchBitcoinRates, satsToUsd, satsToEur, type BtcRates } from '@/utils/currency';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardWrapper } from '@/components/KeyboardWrapper';
@@ -222,10 +223,17 @@ export default function SynopsisScreen() {
     setLightningPaying(true);
     try {
       await payLightningInvoice(book.lightning_address.trim(), sats, `${book.title} - LeePool`, t('error'));
+      if (book.seller_npub?.trim()) {
+        await sendPushNotification(
+          book.seller_npub,
+          t('pushSaleTitle'),
+          t('pushSaleBody')
+        );
+      }
     } finally {
       setLightningPaying(false);
     }
-  }, [book?.lightning_address, book?.title, lightningAmount, t]);
+  }, [book?.lightning_address, book?.title, book?.seller_npub, lightningAmount, t]);
 
   const handleAmazonRedirect = useCallback(() => {
     if (!book) return;

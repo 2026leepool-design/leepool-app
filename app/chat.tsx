@@ -17,6 +17,7 @@ import { SimplePool } from 'nostr-tools/pool';
 import * as nip04 from 'nostr-tools/nip04';
 import * as nip19 from 'nostr-tools/nip19';
 import { loadKeys, sendEncryptedMessage, RELAYS } from '@/utils/nostr';
+import { sendPushNotification } from '@/utils/sendPush';
 
 type ChatMessage = {
   id: string;
@@ -173,13 +174,18 @@ export default function ChatScreen() {
 
     try {
       await sendEncryptedMessage(peerNpubTrimmed, text);
+      await sendPushNotification(
+        peerNpubTrimmed,
+        t('pushNewMessageTitle'),
+        t('pushNewMessageBody')
+      );
     } catch (e) {
       setInputText(text);
       setMessages((prev) => prev.filter((m) => m.id !== optId));
     } finally {
       setSending(false);
     }
-  }, [inputText, peerNpubTrimmed, sending]);
+  }, [inputText, peerNpubTrimmed, sending, t]);
 
   if (loading) {
     return (

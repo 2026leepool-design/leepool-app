@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "420417136276",
+    "project_id": "myleepool",
+    "storage_bucket": "myleepool.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:420417136276:android:17cba00e6193b9ac38b681",
+        "android_client_info": {
+          "package_name": "com.leepool.LeePool"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDyul1IoPsOlaOY8Hx_W2IOPRnLSjipPDA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
