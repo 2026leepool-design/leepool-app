@@ -1,6 +1,7 @@
 import { deleteKeys, generateAndSaveKeys, importNsecKey, loadKeys, type NostrKeys } from '@/utils/nostr';
 import {
   clearNostrProfileRemote,
+  importNostrKeyAndSealToProfile,
   pushNostrProfileFromLocalKeys,
   restoreNostrFromCloud,
 } from '@/utils/nostrProfileSync';
@@ -128,6 +129,10 @@ export default function DashboardScreen() {
   const [nostrActionLoading, setNostrActionLoading] = useState(false);
   const [isQrVisible, setIsQrVisible] = useState(false);
   const [isExportModalVisible, setIsExportModalVisible] = useState(false);
+  const [importKeyModalVisible, setImportKeyModalVisible] = useState(false);
+  const [importKeyModalNsec, setImportKeyModalNsec] = useState('');
+  const [importKeyModalPassword, setImportKeyModalPassword] = useState('');
+  const [importKeyModalLoading, setImportKeyModalLoading] = useState(false);
   const [importNsec, setImportNsec] = useState('');
   const [restoreFromCloudVisible, setRestoreFromCloudVisible] = useState(false);
   const [restoreCloudPassword, setRestoreCloudPassword] = useState('');
@@ -538,6 +543,48 @@ export default function DashboardScreen() {
       Alert.alert(t('error'), t('nostrCloudSyncFailed'));
     } finally {
       setCloudPushLoading(false);
+    }
+  };
+
+  const submitImportKeyWithSeal = async () => {
+    const nsec = importKeyModalNsec.trim();
+    const pwd = importKeyModalPassword.trim();
+    if (!nsec || !pwd) {
+      if (Platform.OS === 'web') {
+        (window as any).alert(t('fillAllFields'));
+      } else {
+        Alert.alert(t('error'), t('fillAllFields'));
+      }
+      return;
+    }
+    setImportKeyModalLoading(true);
+    try {
+      const keys = await importNostrKeyAndSealToProfile(nsec, pwd);
+      setNostrKeys(keys);
+      setCachedAccountPassword(pwd);
+      setUserName(`Cyber-${truncateNpub(keys.npub).replace('npub1', '').slice(0, 6)}`);
+      setImportKeyModalVisible(false);
+      setImportKeyModalNsec('');
+      setImportKeyModalPassword('');
+      nostrSwipeableRef.current?.close();
+      if (Platform.OS === 'web') {
+        (window as any).alert(t('identityImportedSuccess'));
+      } else {
+        Alert.alert(t('success'), t('identityImportedSuccess'));
+      }
+    } catch (err: unknown) {
+      console.error(err);
+      const msg =
+        typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as Error).message)
+          : String(err);
+      if (Platform.OS === 'web') {
+        (window as any).alert(msg || t('error'));
+      } else {
+        Alert.alert(t('error'), msg || t('error'));
+      }
+    } finally {
+      setImportKeyModalLoading(false);
     }
   };
 
@@ -1004,6 +1051,18 @@ export default function DashboardScreen() {
                     <Ionicons name="lock-closed-outline" size={15} color="#A78BFA" />
                     <Text className="text-xs tracking-widest" style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#A78BFA' }}>{t('exportKey')}</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.75}
+                    onPress={() => setImportKeyModalVisible(true)}
+                    className="flex-row items-center gap-2 rounded-xl px-3 py-2.5"
+                    style={{
+                      backgroundColor: 'rgba(232, 121, 249, 0.08)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(232, 121, 249, 0.45)',
+                    }}>
+                    <Ionicons name="key-outline" size={15} color="#E879F9" />
+                    <Text className="text-xs tracking-widest" style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#E879F9' }}>{t('importKey')}</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </Swipeable>
@@ -1272,6 +1331,146 @@ export default function DashboardScreen() {
                 ) : (
                   <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#E879F9' }}>
                     {t('saveToCloud')}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Import nsec + LeePool şifresi (mevcut kimlik varken) ── */}
+      <Modal
+        visible={importKeyModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          if (!importKeyModalLoading) {
+            setImportKeyModalVisible(false);
+            setImportKeyModalNsec('');
+            setImportKeyModalPassword('');
+          }
+        }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.88)',
+            justifyContent: 'center',
+            padding: 24,
+          }}>
+          <View
+            style={{
+              backgroundColor: '#0D1525',
+              borderRadius: 20,
+              padding: 22,
+              borderWidth: 1,
+              borderColor: 'rgba(232, 121, 249, 0.35)',
+            }}>
+            <Text
+              style={{
+                fontFamily: 'SpaceGrotesk_700Bold',
+                fontSize: 14,
+                color: '#E879F9',
+                marginBottom: 8,
+                letterSpacing: 1,
+              }}>
+              {t('importKeyModalTitle')}
+            </Text>
+            <Text
+              style={{
+                fontFamily: 'SpaceGrotesk_400Regular',
+                fontSize: 12,
+                color: '#8892B0',
+                marginBottom: 16,
+                lineHeight: 18,
+              }}>
+              {t('importKeyModalHint')}
+            </Text>
+            <Text
+              style={{
+                fontFamily: 'SpaceGrotesk_500Medium',
+                fontSize: 11,
+                color: '#A78BFA',
+                marginBottom: 6,
+              }}>
+              {t('importKeyModalNsecLabel')}
+            </Text>
+            <TextInput
+              value={importKeyModalNsec}
+              onChangeText={setImportKeyModalNsec}
+              placeholder={t('nsecPlaceholder')}
+              placeholderTextColor="#4A5568"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!importKeyModalLoading}
+              style={{
+                backgroundColor: '#070B14',
+                borderRadius: 12,
+                padding: 14,
+                color: '#E2E8F0',
+                fontFamily: 'SpaceGrotesk_400Regular',
+                marginBottom: 14,
+                borderWidth: 1,
+                borderColor: 'rgba(232, 121, 249, 0.25)',
+              }}
+            />
+            <Text
+              style={{
+                fontFamily: 'SpaceGrotesk_500Medium',
+                fontSize: 11,
+                color: '#A78BFA',
+                marginBottom: 6,
+              }}>
+              {t('importKeyModalPasswordLabel')}
+            </Text>
+            <TextInput
+              value={importKeyModalPassword}
+              onChangeText={setImportKeyModalPassword}
+              placeholder={t('leepoolAccountPasswordPlaceholder')}
+              placeholderTextColor="#4A5568"
+              secureTextEntry
+              autoCapitalize="none"
+              editable={!importKeyModalLoading}
+              style={{
+                backgroundColor: '#070B14',
+                borderRadius: 12,
+                padding: 14,
+                color: '#E2E8F0',
+                fontFamily: 'SpaceGrotesk_400Regular',
+                marginBottom: 16,
+                borderWidth: 1,
+                borderColor: 'rgba(232, 121, 249, 0.25)',
+              }}
+            />
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                className="flex-1 py-3 rounded-xl items-center"
+                style={{ backgroundColor: 'rgba(74, 85, 104, 0.35)' }}
+                disabled={importKeyModalLoading}
+                onPress={() => {
+                  setImportKeyModalVisible(false);
+                  setImportKeyModalNsec('');
+                  setImportKeyModalPassword('');
+                }}>
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#8892B0' }}>
+                  {t('cancel')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 py-3 rounded-xl items-center"
+                style={{
+                  backgroundColor: 'rgba(232, 121, 249, 0.2)',
+                  borderWidth: 1,
+                  borderColor: '#E879F9',
+                }}
+                disabled={importKeyModalLoading}
+                onPress={() => void submitImportKeyWithSeal()}>
+                {importKeyModalLoading ? (
+                  <ActivityIndicator color="#E879F9" />
+                ) : (
+                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#E879F9' }}>
+                    {t('importKeyConfirm')}
                   </Text>
                 )}
               </TouchableOpacity>

@@ -8,6 +8,8 @@ import {
   generateAndSaveKeys,
   importNsecKey,
   loadKeys,
+  parseNsecKeyMaterial,
+  type NostrKeys,
 } from '@/utils/nostr';
 
 type ProfileRow = {
@@ -83,6 +85,42 @@ export async function syncNostrProfileAfterAuth(password: string): Promise<void>
     { onConflict: 'id' }
   );
   if (upErr) throw upErr;
+}
+
+/**
+ * Dışarıdan nsec içe aktarır: doğrula → LeePool şifresiyle şifrele → Supabase profiles güncelle → yerel depoyu yeni anahtarla yazar.
+ * Önce buluta yazılır; başarısız olursa mevcut yerel anahtar korunur.
+ */
+export async function importNostrKeyAndSealToProfile(
+  nsecRaw: string,
+  accountPassword: string
+): Promise<NostrKeys> {
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user?.id) throw new Error('no user');
+
+  const keys = parseNsecKeyMaterial(nsecRaw);
+
+  const saltHex = generateNostrKeySalt();
+  const encrypted = await encryptNsecForProfile(
+    keys.nsec,
+    accountPassword,
+    saltHex,
+    user.id
+  );
+
+  const { error: upErr } = await supabase.from('profiles').upsert(
+    {
+      id: user.id,
+      npub: keys.npub,
+      encrypted_nsec: encrypted,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' }
+  );
+  if (upErr) throw upErr;
+
+  await importNsecKey(nsecRaw.trim());
+  return keys;
 }
 
 /** Yereldeki anahtarı (import/generate sonrası) profile şifreleyerek yazar. */

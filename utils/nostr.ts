@@ -64,10 +64,9 @@ export async function loadKeys(): Promise<NostrKeys | null> {
 }
 
 /**
- * Imports an nsec private key, derives the public key (npub), and saves both to storage.
- * @param nsecRaw - Raw nsec1... string
+ * nsec doğrular; depoya yazmaz. Geçersizse hata fırlatır.
  */
-export async function importNsecKey(nsecRaw: string): Promise<NostrKeys> {
+export function parseNsecKeyMaterial(nsecRaw: string): NostrKeys {
   const trimmed = nsecRaw.trim();
   const decoded = nip19.decode(trimmed);
   if (decoded.type !== 'nsec') throw new Error('Geçersiz nsec anahtarı.');
@@ -77,10 +76,18 @@ export async function importNsecKey(nsecRaw: string): Promise<NostrKeys> {
   const npub = nip19.npubEncode(pk);
   const nsec = nip19.nsecEncode(sk);
 
-  await secureSetItem(KEY_PRIVATE, nsec);
-  await secureSetItem(KEY_PUBLIC, npub);
-
   return { privateKey: sk, publicKey: pk, npub, nsec };
+}
+
+/**
+ * Imports an nsec private key, derives the public key (npub), and saves both to storage.
+ * @param nsecRaw - Raw nsec1... string
+ */
+export async function importNsecKey(nsecRaw: string): Promise<NostrKeys> {
+  const keys = parseNsecKeyMaterial(nsecRaw);
+  await secureSetItem(KEY_PRIVATE, keys.nsec);
+  await secureSetItem(KEY_PUBLIC, keys.npub);
+  return keys;
 }
 
 /**
