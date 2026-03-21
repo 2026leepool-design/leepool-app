@@ -113,6 +113,7 @@ export default function LoginScreen() {
       try {
         await syncNostrProfileAfterAuth(password);
       } catch (syncErr: unknown) {
+        console.error(syncErr);
         await supabase.auth.signOut();
         const code =
           typeof syncErr === 'object' && syncErr !== null && 'message' in syncErr
@@ -128,6 +129,7 @@ export default function LoginScreen() {
       setCachedAccountPassword(password);
       navigateIn();
     } catch (err: any) {
+      console.error(err);
       Alert.alert(t('error'), err.message ?? String(err));
     } finally {
       setClassicLoading(false);
@@ -150,6 +152,7 @@ export default function LoginScreen() {
         try {
           await syncNostrProfileAfterAuth(password);
         } catch (syncErr: unknown) {
+          console.error(syncErr);
           await supabase.auth.signOut();
           const code =
             typeof syncErr === 'object' && syncErr !== null && 'message' in syncErr
@@ -169,6 +172,7 @@ export default function LoginScreen() {
       Alert.alert(t('success'), t('signUpSuccess'));
       navigateIn();
     } catch (err: any) {
+      console.error(err);
       Alert.alert(t('error'), err.message ?? String(err));
     } finally {
       setClassicLoading(false);

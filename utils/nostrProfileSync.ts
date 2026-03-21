@@ -17,7 +17,7 @@ type ProfileRow = {
 
 /**
  * E-posta/şifre ile giriş veya kayıt sonrası: Supabase profili kaynak kabul edilir.
- * - Sunucuda sealed nsec varsa → çöz, SecureStore'a yaz.
+ * - Sunucuda sealed nsec varsa → çöz, yerel depoya yaz (web: localStorage, native: SecureStore).
  * - Yoksa → yerelde anahtar varsa buluta yükle; yoksa yeni çift üret ve buluta yaz.
  */
 export async function syncNostrProfileAfterAuth(password: string): Promise<void> {
@@ -113,7 +113,7 @@ export async function pushNostrProfileFromLocalKeys(password: string): Promise<v
   if (error) throw error;
 }
 
-/** SecureStore boş ama bulutta yedek var — şifre ile geri yükle. */
+/** Yerel anahtar yok ama bulutta yedek var — şifre ile geri yükle. */
 export async function restoreNostrFromCloud(password: string): Promise<void> {
   const { data: { user }, error: userErr } = await supabase.auth.getUser();
   if (userErr || !user?.id) throw new Error('no user');

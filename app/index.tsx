@@ -28,7 +28,8 @@ export default function Index() {
         } else {
           router.replace('/login');
         }
-      } catch {
+      } catch (error) {
+        console.error(error);
         if (isMounted) router.replace('/login');
       } finally {
         if (isMounted) setChecking(false);

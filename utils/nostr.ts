@@ -1,8 +1,11 @@
 import 'react-native-get-random-values';
 
-import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
 import { generateSecretKey, getPublicKey, finalizeEvent } from 'nostr-tools/pure';
+import {
+  secureDeleteItem,
+  secureGetItem,
+  secureSetItem,
+} from '@/utils/platformSecureStorage';
 import * as nip19 from 'nostr-tools/nip19';
 import * as nip04 from 'nostr-tools/nip04';
 import { SimplePool } from 'nostr-tools/pool';
@@ -28,13 +31,8 @@ export async function generateAndSaveKeys(): Promise<NostrKeys> {
   const npub = nip19.npubEncode(pk);
   const nsec = nip19.nsecEncode(sk);
 
-  if (Platform.OS === 'web') {
-    localStorage.setItem(KEY_PRIVATE, nsec);
-    localStorage.setItem(KEY_PUBLIC, npub);
-  } else {
-    await SecureStore.setItemAsync(KEY_PRIVATE, nsec);
-    await SecureStore.setItemAsync(KEY_PUBLIC, npub);
-  }
+  await secureSetItem(KEY_PRIVATE, nsec);
+  await secureSetItem(KEY_PUBLIC, npub);
 
   return { privateKey: sk, publicKey: pk, npub, nsec };
 }
@@ -44,16 +42,8 @@ export async function generateAndSaveKeys(): Promise<NostrKeys> {
  * Returns { privateKey, publicKey, npub } or null if not found.
  */
 export async function loadKeys(): Promise<NostrKeys | null> {
-  let nsec: string | null = null;
-  let npub: string | null = null;
-
-  if (Platform.OS === 'web') {
-    nsec = localStorage.getItem(KEY_PRIVATE);
-    npub = localStorage.getItem(KEY_PUBLIC);
-  } else {
-    nsec = await SecureStore.getItemAsync(KEY_PRIVATE);
-    npub = await SecureStore.getItemAsync(KEY_PUBLIC);
-  }
+  const nsec = await secureGetItem(KEY_PRIVATE);
+  const npub = await secureGetItem(KEY_PUBLIC);
 
   if (!nsec || !npub) return null;
 
@@ -87,13 +77,8 @@ export async function importNsecKey(nsecRaw: string): Promise<NostrKeys> {
   const npub = nip19.npubEncode(pk);
   const nsec = nip19.nsecEncode(sk);
 
-  if (Platform.OS === 'web') {
-    localStorage.setItem(KEY_PRIVATE, nsec);
-    localStorage.setItem(KEY_PUBLIC, npub);
-  } else {
-    await SecureStore.setItemAsync(KEY_PRIVATE, nsec);
-    await SecureStore.setItemAsync(KEY_PUBLIC, npub);
-  }
+  await secureSetItem(KEY_PRIVATE, nsec);
+  await secureSetItem(KEY_PUBLIC, npub);
 
   return { privateKey: sk, publicKey: pk, npub, nsec };
 }
@@ -134,11 +119,6 @@ export async function sendEncryptedMessage(
  * Deletes stored Nostr keys from the storage.
  */
 export async function deleteKeys(): Promise<void> {
-  if (Platform.OS === 'web') {
-    localStorage.removeItem(KEY_PRIVATE);
-    localStorage.removeItem(KEY_PUBLIC);
-  } else {
-    await SecureStore.deleteItemAsync(KEY_PRIVATE);
-    await SecureStore.deleteItemAsync(KEY_PUBLIC);
-  }
+  await secureDeleteItem(KEY_PRIVATE);
+  await secureDeleteItem(KEY_PUBLIC);
 }
