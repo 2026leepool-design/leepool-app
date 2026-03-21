@@ -8,7 +8,10 @@ import {
   ActivityIndicator,
   Keyboard,
   Alert,
+  Linking,
+  Platform,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,8 +27,10 @@ import {
   buildOfferAcceptedMessage,
   buildOfferRejectedMessage,
   buildOfferCancelledMessage,
+  buildLocationShareMessage,
   type OfferPendingMessage,
   type OfferAcceptedMessage,
+  type LocationShareMessage,
 } from '@/utils/offerMessages';
 import { completeP2PBookTransfer } from '@/utils/p2pSale';
 
@@ -58,6 +63,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
   const [myNpub, setMyNpub] = useState<string | null>(null);
   const [payingOffer, setPayingOffer] = useState<string | null>(null);
   const [completingSale, setCompletingSale] = useState<string | null>(null);
+  const [sendingLocation, setSendingLocation] = useState(false);
 
   const poolRef = useRef<SimplePool | null>(null);
   const subRef = useRef<{ close: () => void } | null>(null);
@@ -174,6 +180,88 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
     };
   }, [peerNpubTrimmed, t]);
 
+  const openLocationInExternalMaps = useCallback(async (lat: number, lng: number) => {
+    const innerMaps = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    const url = `https://www.google.com/search?q=${encodeURIComponent(innerMaps)}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+        return;
+      }
+      await Linking.openURL(innerMaps);
+    } catch (e) {
+      console.warn('[P2PChat] open maps URL failed', e);
+      try {
+        await Linking.openURL(innerMaps);
+      } catch (e2) {
+        console.warn('[P2PChat] fallback maps URL failed', e2);
+        const msg = t('openMapFailed');
+        if (Platform.OS === 'web') {
+          (window as Window).alert(msg);
+        } else {
+          Alert.alert(t('error'), msg);
+        }
+      }
+    }
+  }, [t]);
+
+  const handleSendLocation = useCallback(async () => {
+    if (!peerNpubTrimmed || sending || sendingLocation) return;
+
+    setSendingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const msg = t('locationShareError');
+        if (Platform.OS === 'web') {
+          (window as Window).alert(msg);
+        } else {
+          Alert.alert(t('error'), msg);
+        }
+        return;
+      }
+
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const payload = buildLocationShareMessage(lat, lng);
+
+      const optId = `opt-loc-${Date.now()}`;
+      const optimistic: ChatMessage = {
+        id: optId,
+        text: payload,
+        isFromMe: true,
+        createdAt: Math.floor(Date.now() / 1000),
+      };
+      setMessages((prev) => [...prev, optimistic].sort((a, b) => a.createdAt - b.createdAt));
+
+      try {
+        await sendEncryptedMessage(peerNpubTrimmed, payload);
+      } catch {
+        setMessages((prev) => prev.filter((m) => m.id !== optId));
+        const msg = t('locationShareError');
+        if (Platform.OS === 'web') {
+          (window as Window).alert(msg);
+        } else {
+          Alert.alert(t('error'), msg);
+        }
+      }
+    } catch (e) {
+      console.warn('[P2PChat] location failed', e);
+      const msg = t('locationShareError');
+      if (Platform.OS === 'web') {
+        (window as Window).alert(msg);
+      } else {
+        Alert.alert(t('error'), msg);
+      }
+    } finally {
+      setSendingLocation(false);
+    }
+  }, [peerNpubTrimmed, sending, sendingLocation, t]);
+
   const handleSendPlain = useCallback(async () => {
     const text = inputText.trim();
     if (!text || !peerNpubTrimmed || sending) return;
@@ -256,7 +344,8 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
           book.lightning_address.trim(),
           accepted.amount,
           `${String(book.title)} - LeePool P2P`,
-          t('error')
+          t('error'),
+          t('lightningWalletOpenFailed')
         );
       } catch (e) {
         if (e instanceof Error && !e.message.includes('Payment')) {
@@ -309,7 +398,67 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
 
   const renderStructuredBubble = useCallback(
     (item: ChatMessage, structured: ReturnType<typeof tryParseStructuredNostrMessage>) => {
-      if (!structured || !myNpub) {
+      if (!structured) {
+        return null;
+      }
+
+      if (structured.type === 'location') {
+        const loc = structured as LocationShareMessage;
+        return (
+          <View
+            className="rounded-2xl px-4 py-3 gap-3"
+            style={{
+              backgroundColor: item.isFromMe
+                ? 'rgba(0, 229, 255, 0.1)'
+                : 'rgba(16, 185, 129, 0.12)',
+              borderWidth: 1,
+              borderColor: item.isFromMe
+                ? 'rgba(0, 229, 255, 0.45)'
+                : 'rgba(16, 185, 129, 0.4)',
+            }}>
+            <View className="flex-row items-center gap-2">
+              <View
+                className="w-10 h-10 rounded-xl items-center justify-center"
+                style={{
+                  backgroundColor: item.isFromMe
+                    ? 'rgba(0, 229, 255, 0.15)'
+                    : 'rgba(16, 185, 129, 0.2)',
+                }}>
+                <Ionicons name="location" size={22} color={item.isFromMe ? '#00E5FF' : '#34D399'} />
+              </View>
+              <View className="flex-1">
+                <Text
+                  className="text-sm"
+                  style={{
+                    fontFamily: 'SpaceGrotesk_600SemiBold',
+                    color: item.isFromMe ? '#00E5FF' : '#6EE7B7',
+                  }}>
+                  {t('locationSharedLabel')}
+                </Text>
+                <Text
+                  className="text-[10px] mt-0.5"
+                  style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#8892B0' }}>
+                  {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => void openLocationInExternalMaps(loc.lat, loc.lng)}
+              className="rounded-xl py-2.5 items-center"
+              style={{
+                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                borderWidth: 1,
+                borderColor: 'rgba(59, 130, 246, 0.5)',
+              }}>
+              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#60A5FA', fontSize: 12 }}>
+                {t('openInMap')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      if (!myNpub) {
         return null;
       }
 
@@ -468,6 +617,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
       handleConfirmSale,
       payingOffer,
       completingSale,
+      openLocationInExternalMaps,
     ]
   );
 
@@ -588,6 +738,24 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
           borderTopWidth: 1,
           borderColor: 'rgba(0, 229, 255, 0.1)',
         }}>
+        <TouchableOpacity
+          onPress={() => void handleSendLocation()}
+          disabled={sending || sendingLocation}
+          accessibilityRole="button"
+          accessibilityLabel={t('shareLocationA11y')}
+          className="rounded-xl px-3 py-3 min-h-[44] justify-center items-center"
+          style={{
+            backgroundColor: 'rgba(16, 185, 129, 0.12)',
+            borderWidth: 1,
+            borderColor: 'rgba(16, 185, 129, 0.35)',
+            opacity: sending || sendingLocation ? 0.5 : 1,
+          }}>
+          {sendingLocation ? (
+            <ActivityIndicator size="small" color="#34D399" />
+          ) : (
+            <Ionicons name="map-outline" size={22} color="#34D399" />
+          )}
+        </TouchableOpacity>
         <TextInput
           className="flex-1 rounded-xl px-4 py-3 text-base min-h-[44] max-h-[100]"
           style={{

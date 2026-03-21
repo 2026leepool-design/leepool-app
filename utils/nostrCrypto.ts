@@ -26,10 +26,16 @@ function getTweetnaclUtil(): NaclUtilModule {
 
 const naclUtil = getTweetnaclUtil();
 
-function hexToBytes(hex: string): Uint8Array {
-  const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+const Z = new Uint8Array([0]);
+
+/** Birden fazla Uint8Array'i tek buffer'da birleştir (KDF malzemesi — Hermes/V8 uyumu). */
+function concatBytes(...parts: Uint8Array[]): Uint8Array {
+  const len = parts.reduce((s, p) => s + p.length, 0);
+  const out = new Uint8Array(len);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
   }
   return out;
 }
@@ -40,23 +46,37 @@ export function generateNostrKeySalt(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function sha256Hex(input: string): Promise<string> {
-  return Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    input,
-    { encoding: Crypto.CryptoEncoding.HEX }
-  );
-}
-
-/** 32-byte key for nacl.secretbox (derived from account password + salt + user id). */
+/**
+ * 32-byte key for nacl.secretbox.
+ * Parola ve sabit metinler tweetnacl-util decodeUTF8 ile UTF-8 baytlarına çevrilir;
+ * SHA256, expo-crypto digest(Uint8Array) ile hesaplanır (digestStringAsync’ten farklı
+ * platform davranışlarından kaçınmak için).
+ */
 export async function deriveNostrEncryptionKey(
   password: string,
   saltHex: string,
   userId: string
 ): Promise<Uint8Array> {
-  const material = `${password}\x00${saltHex}\x00${userId}\x00leepool-nostr-seal-v1`;
-  const hex = await sha256Hex(material);
-  return hexToBytes(hex);
+  const passwordBytes = naclUtil.decodeUTF8(password);
+  const saltBytes = naclUtil.decodeUTF8(saltHex.trim());
+  const userIdBytes = naclUtil.decodeUTF8(userId);
+  const markerBytes = naclUtil.decodeUTF8('leepool-nostr-seal-v1');
+  const material = concatBytes(
+    passwordBytes,
+    Z,
+    saltBytes,
+    Z,
+    userIdBytes,
+    Z,
+    markerBytes
+  );
+  /** BufferSource tip uyumu (TS 5.x / Hermes Uint8Array) */
+  const toDigest = new Uint8Array(material);
+  const digestBuf = await Crypto.digest(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    toDigest
+  );
+  return new Uint8Array(digestBuf);
 }
 
 export async function encryptNsecForProfile(
@@ -67,11 +87,13 @@ export async function encryptNsecForProfile(
 ): Promise<string> {
   const key = await deriveNostrEncryptionKey(password, saltHex, userId);
   const nonce = nacl.randomBytes(24);
-  const msg = new TextEncoder().encode(nsec);
+  /** Düz metin: yalnızca tweetnacl-util UTF-8 (TextEncoder/btoa kullanılmaz). */
+  const msg = naclUtil.decodeUTF8(nsec);
   const boxed = nacl.secretbox(msg, nonce, key);
   const payload = {
     v: 1,
     s: saltHex,
+    /** nonce/ciphertext: yalnızca tweetnacl-util encodeBase64 (Buffer/btoa yok). */
     n: naclUtil.encodeBase64(nonce),
     c: naclUtil.encodeBase64(boxed),
   };
@@ -87,24 +109,44 @@ export async function decryptNsecFromProfile(
   let parsed: { v: number; s?: string; n: string; c: string };
   try {
     parsed = JSON.parse(encryptedJson) as { v: number; s?: string; n: string; c: string };
-  } catch {
+  } catch (e) {
+    console.warn('[NOSTR_DECRYPT] JSON.parse failed', e);
     return null;
   }
   if (parsed.v !== 1 || typeof parsed.n !== 'string' || typeof parsed.c !== 'string') {
+    console.warn('[NOSTR_DECRYPT] Invalid payload shape', {
+      v: parsed.v,
+      hasN: typeof parsed.n,
+      hasC: typeof parsed.c,
+    });
     return null;
   }
   const salt = (typeof parsed.s === 'string' && parsed.s.trim() ? parsed.s.trim() : saltHex) ?? '';
-  if (!salt) return null;
+  if (!salt) {
+    console.warn('[NOSTR_DECRYPT] Missing salt (payload.s and fallback both empty)');
+    return null;
+  }
   const key = await deriveNostrEncryptionKey(password, salt, userId);
   let nonce: Uint8Array;
   let boxed: Uint8Array;
   try {
+    /** atob/Buffer yok — sadece tweetnacl-util decodeBase64 */
     nonce = naclUtil.decodeBase64(parsed.n);
     boxed = naclUtil.decodeBase64(parsed.c);
-  } catch {
+  } catch (e) {
+    console.warn(
+      '[NOSTR_DECRYPT] decodeBase64 failed (nonce/ciphertext) — not a secretbox.open failure',
+      e
+    );
     return null;
   }
   const opened = nacl.secretbox.open(boxed, nonce, key);
-  if (!opened) return null;
-  return new TextDecoder().decode(opened);
+  if (!opened) {
+    console.warn(
+      '[NOSTR_DECRYPT] nacl.secretbox.open returned null (wrong password, key derivation mismatch, or corrupt ciphertext)'
+    );
+    return null;
+  }
+  /** Çıktı: tweetnacl-util encodeUTF8 (TextDecoder yerine tutarlı UTF-8) */
+  return naclUtil.encodeUTF8(opened);
 }

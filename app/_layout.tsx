@@ -1,3 +1,4 @@
+/* PRNG: tweetnacl / expo-crypto öncesi yüklenmeli (Hermes + web). */
 import 'react-native-get-random-values';
 import 'text-encoding';
 import '../global.css';

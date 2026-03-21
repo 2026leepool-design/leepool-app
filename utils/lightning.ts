@@ -7,12 +7,14 @@ import { Linking, Alert } from 'react-native';
  * @param amountSats - Amount in satoshis
  * @param comment - Optional comment for the payment
  * @param errorTitle - Translated "Error" string (pass t('error'))
+ * @param walletOpenFailMessage - Shown if Linking.openURL(lightning:...) throws (e.g. t('lightningWalletOpenFailed'))
  */
 export async function payLightningInvoice(
   lightningAddress: string,
   amountSats: number,
   comment: string = '',
-  errorTitle: string = 'Error'
+  errorTitle: string = 'Error',
+  walletOpenFailMessage: string = 'Lightning wallet could not be opened or was not found.'
 ): Promise<void> {
   try {
     const trimmed = lightningAddress.trim().toLowerCase();
@@ -53,18 +55,34 @@ export async function payLightningInvoice(
       throw new Error(json2.reason);
     }
 
-    const pr = json2.pr;
-    if (!pr || typeof pr !== 'string') {
+    const prRaw = json2.pr;
+    if (!prRaw || typeof prRaw !== 'string') {
       throw new Error('Payment invoice could not be obtained.');
     }
 
-    const lightningUri = `lightning:${pr}`;
-    const canOpen = await Linking.canOpenURL(lightningUri);
-    if (!canOpen) {
-      throw new Error('No Lightning wallet found. Please install a Lightning wallet app.');
+    const pr = prRaw.trim();
+    const bolt11Main = (pr.split(/[\s&?]/)[0] ?? pr).trim();
+    if (!/^ln(bc|tb|bcrt)/i.test(bolt11Main)) {
+      console.warn(
+        '[LeePool][Lightning] Invoice may not be standard BOLT11 (expected lnbc...):',
+        pr.slice(0, 40)
+      );
     }
+    console.log(
+      '[LeePool][Lightning] Opening wallet; invoice prefix:',
+      pr.slice(0, 14),
+      'length:',
+      pr.length
+    );
 
-    await Linking.openURL(lightningUri);
+    /** canOpenURL kaldırıldı — iOS/Android intent görünürlüğü yanlış negatif verebilir. */
+    const lightningUri = `lightning:${pr}`;
+    try {
+      await Linking.openURL(lightningUri);
+    } catch (openErr) {
+      console.warn('[LeePool][Lightning] Linking.openURL failed:', openErr);
+      Alert.alert(errorTitle, walletOpenFailMessage);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Payment could not be initiated.';
     Alert.alert(errorTitle, message);

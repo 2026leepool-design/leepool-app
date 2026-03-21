@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": [
+          "lightning"
+        ]
+      }
     },
     "android": {
       "googleServicesFile": "./google-services.json",
@@ -48,8 +53,16 @@
       ],
       "expo-font",
       "expo-av",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "LeePool can use your location when you share it in messages."
+        }
+      ],
       "expo-secure-store",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "./plugins/withLightningAndroidQueries.js",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true,

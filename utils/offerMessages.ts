@@ -36,11 +36,19 @@ export type OfferCancelledMessage = {
   offerId: string;
 };
 
+/** DM içinde paylaşılan anlık konum (şifreli kanalda JSON string olarak). */
+export type LocationShareMessage = {
+  type: 'location';
+  lat: number;
+  lng: number;
+};
+
 export type StructuredNostrMessage =
   | OfferPendingMessage
   | OfferAcceptedMessage
   | OfferRejectedMessage
-  | OfferCancelledMessage;
+  | OfferCancelledMessage
+  | LocationShareMessage;
 
 export function tryParseStructuredNostrMessage(text: string): StructuredNostrMessage | null {
   const trimmed = text.trim();
@@ -48,6 +56,12 @@ export function tryParseStructuredNostrMessage(text: string): StructuredNostrMes
   try {
     const o = JSON.parse(trimmed) as Record<string, unknown>;
     if (!o || typeof o.type !== 'string') return null;
+    if (o.type === 'location') {
+      const lat = Number(o.lat);
+      const lng = Number(o.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      return { type: 'location', lat, lng };
+    }
     if (
       o.type === 'offer' ||
       o.type === 'offer_accepted' ||
@@ -91,4 +105,8 @@ export function buildOfferCancelledMessage(
 
 export function generateOfferId(): string {
   return `off_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function buildLocationShareMessage(lat: number, lng: number): string {
+  return JSON.stringify({ type: 'location', lat, lng } satisfies LocationShareMessage);
 }
