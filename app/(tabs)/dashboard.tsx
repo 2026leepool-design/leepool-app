@@ -1,4 +1,10 @@
 import { deleteKeys, generateAndSaveKeys, importNsecKey, loadKeys, type NostrKeys } from '@/utils/nostr';
+import {
+  clearNostrProfileRemote,
+  pushNostrProfileFromLocalKeys,
+  restoreNostrFromCloud,
+} from '@/utils/nostrProfileSync';
+import { getCachedAccountPassword, setCachedAccountPassword } from '@/utils/authPasswordSession';
 import { supabase } from '@/utils/supabase';
 import { fetchBitcoinRates, type BtcRates } from '@/utils/currency';
 import { Ionicons } from '@expo/vector-icons';
@@ -123,6 +129,13 @@ export default function DashboardScreen() {
   const [isQrVisible, setIsQrVisible] = useState(false);
   const [isExportModalVisible, setIsExportModalVisible] = useState(false);
   const [importNsec, setImportNsec] = useState('');
+  const [restoreFromCloudVisible, setRestoreFromCloudVisible] = useState(false);
+  const [restoreCloudPassword, setRestoreCloudPassword] = useState('');
+  const [restoreCloudLoading, setRestoreCloudLoading] = useState(false);
+  const [cloudPushVisible, setCloudPushVisible] = useState(false);
+  const [cloudPushPassword, setCloudPushPassword] = useState('');
+  const [cloudPushLoading, setCloudPushLoading] = useState(false);
+  const restorePromptedRef = useRef(false);
   const [userName, setUserName] = useState<string | null>(null);
   const [btcRates, setBtcRates] = useState<BtcRates | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,6 +145,21 @@ export default function DashboardScreen() {
   /** Web: Chrome giriş sonrası ilk odaktaki input'a email basmasın — kısa süre readOnly */
   const [searchWebUnlock, setSearchWebUnlock] = useState(Platform.OS !== 'web');
   const nostrSwipeableRef = useRef<Swipeable>(null);
+
+  const maybeOfferCloudSyncAfterKeyChange = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return;
+    const pwd = getCachedAccountPassword();
+    if (pwd) {
+      try {
+        await pushNostrProfileFromLocalKeys(pwd);
+      } catch {
+        setCloudPushVisible(true);
+      }
+    } else {
+      setCloudPushVisible(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -247,7 +275,7 @@ export default function DashboardScreen() {
           const { data: { user: authUser } } = await supabase.auth.getUser();
           const statsQuery = supabase
             .from('books')
-            .select('current_value, total_pages, read_pages, status, is_for_sale');
+            .select('current_value, total_pages, read_pages, status, is_for_sale, sale_status');
           if (authUser?.id) statsQuery.eq('user_id', authUser.id);
           const { data, error } = await statsQuery;
           if (error) throw error;
@@ -259,7 +287,11 @@ export default function DashboardScreen() {
             totalPages: rows.reduce((s, b) => s + (b.total_pages ?? 0), 0),
             readPages: rows.reduce((s, b) => s + (b.read_pages ?? 0), 0),
             readCount: rows.filter((b) => b.status === 'read').length,
-            forSaleCount: rows.filter((b) => b.is_for_sale).length,
+            forSaleCount: rows.filter(
+              (b) =>
+                (b as { sale_status?: string }).sale_status === 'for_sale' ||
+                (b as { is_for_sale?: boolean }).is_for_sale
+            ).length,
           });
         } catch {
           // silently fail
@@ -285,6 +317,28 @@ export default function DashboardScreen() {
             setNostrKeys(keys);
             if (!userName && keys) {
               setUserName(`Cyber-${truncateNpub(keys.npub).replace('npub1', '').slice(0, 6)}`);
+            }
+            if (
+              !keys &&
+              !restorePromptedRef.current
+            ) {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (user?.id) {
+                const { data: prof, error: pErr } = await supabase
+                  .from('profiles')
+                  .select('encrypted_nsec')
+                  .eq('id', user.id)
+                  .maybeSingle();
+                if (
+                  !pErr &&
+                  prof &&
+                  typeof (prof as { encrypted_nsec?: string }).encrypted_nsec === 'string' &&
+                  (prof as { encrypted_nsec: string }).encrypted_nsec.trim()
+                ) {
+                  restorePromptedRef.current = true;
+                  setRestoreFromCloudVisible(true);
+                }
+              }
             }
           }
         } catch {
@@ -326,6 +380,7 @@ export default function DashboardScreen() {
   const handleSignOut = async () => {
     const doSignOut = async () => {
       try {
+        setCachedAccountPassword(null);
         if (Platform.OS !== 'web') {
           try {
             const tokenToDelete = await registerForPushNotificationsAsync();
@@ -368,6 +423,7 @@ export default function DashboardScreen() {
     try {
       const keys = await generateAndSaveKeys();
       setNostrKeys(keys);
+      await maybeOfferCloudSyncAfterKeyChange();
     } catch {
       // silently fail
     } finally {
@@ -393,6 +449,7 @@ export default function DashboardScreen() {
       setNostrKeys(keys);
       setImportNsec('');
       setUserName(`Cyber-${truncateNpub(keys.npub).replace('npub1', '').slice(0, 6)}`);
+      await maybeOfferCloudSyncAfterKeyChange();
     } catch (err: any) {
       const msg = err?.message ?? String(err);
       if (Platform.OS === 'web') {
@@ -418,6 +475,11 @@ export default function DashboardScreen() {
             setNostrActionLoading(true);
             try {
               await deleteKeys();
+              try {
+                await clearNostrProfileRemote();
+              } catch {
+                // sunucu temizliği isteğe bağlı
+              }
               setNostrKeys(null);
             } catch {
               // silently fail
@@ -433,6 +495,50 @@ export default function DashboardScreen() {
   const truncateNpub = (npub: string) => {
     if (npub.length <= 28) return npub;
     return `${npub.slice(0, 12)}...${npub.slice(-12)}`;
+  };
+
+  const submitRestoreFromCloud = async () => {
+    const pwd = restoreCloudPassword.trim();
+    if (!pwd) {
+      Alert.alert(t('error'), t('fillAllFields'));
+      return;
+    }
+    setRestoreCloudLoading(true);
+    try {
+      await restoreNostrFromCloud(pwd);
+      const keys = await loadKeys();
+      setNostrKeys(keys);
+      setRestoreFromCloudVisible(false);
+      setRestoreCloudPassword('');
+      if (keys) {
+        setUserName(`Cyber-${truncateNpub(keys.npub).replace('npub1', '').slice(0, 6)}`);
+      }
+      Alert.alert(t('success'), t('nostrCloudSynced'));
+    } catch {
+      Alert.alert(t('error'), t('nostrSyncDecryptError'));
+    } finally {
+      setRestoreCloudLoading(false);
+    }
+  };
+
+  const submitCloudPush = async () => {
+    const pwd = cloudPushPassword.trim();
+    if (!pwd) {
+      Alert.alert(t('error'), t('fillAllFields'));
+      return;
+    }
+    setCloudPushLoading(true);
+    try {
+      await pushNostrProfileFromLocalKeys(pwd);
+      setCachedAccountPassword(pwd);
+      setCloudPushVisible(false);
+      setCloudPushPassword('');
+      Alert.alert(t('success'), t('nostrCloudSynced'));
+    } catch {
+      Alert.alert(t('error'), t('nostrCloudSyncFailed'));
+    } finally {
+      setCloudPushLoading(false);
+    }
   };
 
   const runOmniSearchWithApiCheck = useCallback(
@@ -987,6 +1093,192 @@ export default function DashboardScreen() {
         </View>
 
     </KeyboardWrapper>
+
+      {/* ── Restore Nostr from Supabase (empty SecureStore) ── */}
+      <Modal
+        visible={restoreFromCloudVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          if (!restoreCloudLoading) setRestoreFromCloudVisible(false);
+        }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.88)',
+            justifyContent: 'center',
+            padding: 24,
+          }}>
+          <View
+            style={{
+              backgroundColor: '#0D1525',
+              borderRadius: 20,
+              padding: 22,
+              borderWidth: 1,
+              borderColor: 'rgba(0, 229, 255, 0.25)',
+            }}>
+            <Text
+              style={{
+                fontFamily: 'SpaceGrotesk_700Bold',
+                fontSize: 14,
+                color: '#00E5FF',
+                marginBottom: 8,
+                letterSpacing: 1,
+              }}>
+              {t('restoreNostrFromCloudTitle')}
+            </Text>
+            <Text
+              style={{
+                fontFamily: 'SpaceGrotesk_400Regular',
+                fontSize: 12,
+                color: '#8892B0',
+                marginBottom: 16,
+                lineHeight: 18,
+              }}>
+              {t('restoreNostrFromCloudHint')}
+            </Text>
+            <TextInput
+              value={restoreCloudPassword}
+              onChangeText={setRestoreCloudPassword}
+              placeholder={t('passwordPlaceholder')}
+              placeholderTextColor="#4A5568"
+              secureTextEntry
+              autoCapitalize="none"
+              editable={!restoreCloudLoading}
+              style={{
+                backgroundColor: '#070B14',
+                borderRadius: 12,
+                padding: 14,
+                color: '#E2E8F0',
+                fontFamily: 'SpaceGrotesk_400Regular',
+                marginBottom: 16,
+                borderWidth: 1,
+                borderColor: 'rgba(0, 229, 255, 0.2)',
+              }}
+            />
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                className="flex-1 py-3 rounded-xl items-center"
+                style={{ backgroundColor: 'rgba(74, 85, 104, 0.35)' }}
+                disabled={restoreCloudLoading}
+                onPress={() => {
+                  setRestoreFromCloudVisible(false);
+                  setRestoreCloudPassword('');
+                }}>
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#8892B0' }}>
+                  {t('cancel')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 py-3 rounded-xl items-center"
+                style={{ backgroundColor: 'rgba(0, 229, 255, 0.2)', borderWidth: 1, borderColor: '#00E5FF' }}
+                disabled={restoreCloudLoading}
+                onPress={() => void submitRestoreFromCloud()}>
+                {restoreCloudLoading ? (
+                  <ActivityIndicator color="#00E5FF" />
+                ) : (
+                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#00E5FF' }}>
+                    {t('restoreNostrAction')}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Push Nostr to cloud (password when session cache empty) ── */}
+      <Modal
+        visible={cloudPushVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          if (!cloudPushLoading) setCloudPushVisible(false);
+        }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.88)',
+            justifyContent: 'center',
+            padding: 24,
+          }}>
+          <View
+            style={{
+              backgroundColor: '#0D1525',
+              borderRadius: 20,
+              padding: 22,
+              borderWidth: 1,
+              borderColor: 'rgba(168, 85, 247, 0.3)',
+            }}>
+            <Text
+              style={{
+                fontFamily: 'SpaceGrotesk_700Bold',
+                fontSize: 14,
+                color: '#E879F9',
+                marginBottom: 8,
+                letterSpacing: 1,
+              }}>
+              {t('cloudPushNostrTitle')}
+            </Text>
+            <Text
+              style={{
+                fontFamily: 'SpaceGrotesk_400Regular',
+                fontSize: 12,
+                color: '#8892B0',
+                marginBottom: 16,
+                lineHeight: 18,
+              }}>
+              {t('cloudPushNostrHint')}
+            </Text>
+            <TextInput
+              value={cloudPushPassword}
+              onChangeText={setCloudPushPassword}
+              placeholder={t('passwordPlaceholder')}
+              placeholderTextColor="#4A5568"
+              secureTextEntry
+              autoCapitalize="none"
+              editable={!cloudPushLoading}
+              style={{
+                backgroundColor: '#070B14',
+                borderRadius: 12,
+                padding: 14,
+                color: '#E2E8F0',
+                fontFamily: 'SpaceGrotesk_400Regular',
+                marginBottom: 16,
+                borderWidth: 1,
+                borderColor: 'rgba(168, 85, 247, 0.25)',
+              }}
+            />
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                className="flex-1 py-3 rounded-xl items-center"
+                style={{ backgroundColor: 'rgba(74, 85, 104, 0.35)' }}
+                disabled={cloudPushLoading}
+                onPress={() => {
+                  setCloudPushVisible(false);
+                  setCloudPushPassword('');
+                }}>
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#8892B0' }}>
+                  {t('skipCloudSync')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 py-3 rounded-xl items-center"
+                style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', borderWidth: 1, borderColor: '#A855F7' }}
+                disabled={cloudPushLoading}
+                onPress={() => void submitCloudPush()}>
+                {cloudPushLoading ? (
+                  <ActivityIndicator color="#A855F7" />
+                ) : (
+                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#E879F9' }}>
+                    {t('saveToCloud')}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Export (nsec Backup) Modal ── */}
       <Modal

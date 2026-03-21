@@ -47,6 +47,7 @@
         }
       ],
       "expo-font",
+      "expo-av",
       "expo-secure-store",
       "@react-native-community/datetimepicker"
     ],

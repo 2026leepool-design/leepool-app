@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import 'react-native-get-random-values';
+
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -6,23 +8,21 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Platform,
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { KeyboardWrapper } from '@/components/KeyboardWrapper';
-import { Ionicons } from '@expo/vector-icons';
+import { LoginIntroOverlay } from '@/components/LoginIntroOverlay';
 import { supabase } from '@/utils/supabase';
-import { generateAndSaveKeys, importNsecKey } from '@/utils/nostr';
+import { syncNostrProfileAfterAuth } from '@/utils/nostrProfileSync';
+import { setCachedAccountPassword } from '@/utils/authPasswordSession';
 
 const LANGUAGES = [
   { code: 'tr', flag: '🇹🇷' },
   { code: 'en', flag: '🇺🇸' },
   { code: 'es', flag: '🇪🇸' },
 ];
-
-type Tab = 'classic' | 'web3';
 
 function CyberInput({
   value,
@@ -74,24 +74,30 @@ function CyberInput({
   );
 }
 
+type IntroPhase = 'intro' | 'ready';
+
 export default function LoginScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>('classic');
 
-  // Classic
+  /** Her login ekranına gelişte veya logoya tıklanınca artırılır → overlay yeniden mount */
+  const [introRunId, setIntroRunId] = useState(0);
+  const [introPhase, setIntroPhase] = useState<IntroPhase>('intro');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [classicLoading, setClassicLoading] = useState(false);
 
-  // Web3
-  const [nsecInput, setNsecInput] = useState('');
-  const [web3Loading, setWeb3Loading] = useState(false);
-  const [generateLoading, setGenerateLoading] = useState(false);
+  const onIntroFinished = useCallback(() => {
+    setIntroPhase('ready');
+  }, []);
+
+  const replayIntroFromLogo = useCallback(() => {
+    setIntroRunId((n) => n + 1);
+    setIntroPhase('intro');
+  }, []);
 
   const navigateIn = () => router.replace('/(tabs)/dashboard');
 
-  // ─── Supabase Login ─────────────────────────────────────────────────────────
   const handleSignIn = async () => {
     if (!email.trim() || !password) {
       Alert.alert(t('error'), t('fillAllFields'));
@@ -104,6 +110,22 @@ export default function LoginScreen() {
         password,
       });
       if (error) throw error;
+      try {
+        await syncNostrProfileAfterAuth(password);
+      } catch (syncErr: unknown) {
+        await supabase.auth.signOut();
+        const code =
+          typeof syncErr === 'object' && syncErr !== null && 'message' in syncErr
+            ? String((syncErr as Error).message)
+            : String(syncErr);
+        const msg =
+          code === 'NOSTR_DECRYPT_FAILED'
+            ? t('nostrSyncDecryptError')
+            : code;
+        Alert.alert(t('error'), msg);
+        return;
+      }
+      setCachedAccountPassword(password);
       navigateIn();
     } catch (err: any) {
       Alert.alert(t('error'), err.message ?? String(err));
@@ -119,11 +141,31 @@ export default function LoginScreen() {
     }
     setClassicLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
       });
       if (error) throw error;
+      if (data.session) {
+        try {
+          await syncNostrProfileAfterAuth(password);
+        } catch (syncErr: unknown) {
+          await supabase.auth.signOut();
+          const code =
+            typeof syncErr === 'object' && syncErr !== null && 'message' in syncErr
+              ? String((syncErr as Error).message)
+              : String(syncErr);
+          const msg =
+            code === 'NOSTR_DECRYPT_FAILED'
+              ? t('nostrSyncDecryptError')
+              : code;
+          Alert.alert(t('error'), msg);
+          return;
+        }
+        setCachedAccountPassword(password);
+      } else {
+        setCachedAccountPassword(null);
+      }
       Alert.alert(t('success'), t('signUpSuccess'));
       navigateIn();
     } catch (err: any) {
@@ -133,366 +175,162 @@ export default function LoginScreen() {
     }
   };
 
-  // ─── Nostr Import ────────────────────────────────────────────────────────────
-  const handleImportNsec = async () => {
-    if (!nsecInput.trim()) {
-      if (Platform.OS === 'web') {
-        window.alert(t('fillAllFields'));
-      } else {
-        Alert.alert(t('error'), t('fillAllFields'));
-      }
-      return;
-    }
-    setWeb3Loading(true);
-    try {
-      await importNsecKey(nsecInput.trim());
-      router.replace('/(tabs)/dashboard');
-    } catch (err: any) {
-      const msg = err.message ?? String(err);
-      if (Platform.OS === 'web') {
-        window.alert(msg);
-      } else {
-        Alert.alert(t('error'), msg);
-      }
-    } finally {
-      setWeb3Loading(false);
-    }
-  };
-
-  // ─── Nostr Generate ──────────────────────────────────────────────────────────
-  const handleGenerate = async () => {
-    setGenerateLoading(true);
-    try {
-      await generateAndSaveKeys();
-      router.replace('/(tabs)/dashboard');
-    } catch (err: any) {
-      const msg = err.message ?? String(err);
-      if (Platform.OS === 'web') {
-        window.alert(msg);
-      } else {
-        Alert.alert(t('error'), msg);
-      }
-    } finally {
-      setGenerateLoading(false);
-    }
-  };
-
   return (
+    <View style={{ flex: 1, backgroundColor: '#0A0F1A' }}>
+      {introPhase === 'intro' ? (
+        <LoginIntroOverlay key={`login-intro-${introRunId}`} onFinished={onIntroFinished} />
+      ) : null}
+
+      {introPhase === 'ready' ? (
     <KeyboardWrapper
       contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 32 }}>
-      {/* ── Logo ── */}
-          <View style={{ alignItems: 'center', marginBottom: 40 }}>
-            <View
-              style={{
-                width: 88,
-                height: 88,
-                borderRadius: 22,
-                backgroundColor: 'rgba(0, 229, 255, 0.08)',
-                borderWidth: 1,
-                borderColor: '#00E5FF',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: 16,
-                shadowColor: '#00E5FF',
-                shadowOffset: { width: 0, height: 0 },
-                shadowOpacity: 0.45,
-                shadowRadius: 22,
-                elevation: 8,
-                overflow: 'hidden',
-              }}>
-              <Image
-                source={require('../assets/images/android-icon-foreground.png')}
-                style={{ width: 88, height: 88 }}
-                resizeMode="cover"
-              />
-            </View>
+      {/* ── Logo (tıkla → intro tekrar) ── */}
+      <View style={{ alignItems: 'center', marginBottom: 40 }}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={replayIntroFromLogo}
+          accessibilityRole="button"
+          accessibilityLabel={t('replayLoginIntroA11y')}
+          style={{
+            width: 88,
+            height: 88,
+            borderRadius: 22,
+            backgroundColor: 'rgba(0, 229, 255, 0.08)',
+            borderWidth: 1,
+            borderColor: '#00E5FF',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: 16,
+            shadowColor: '#00E5FF',
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.45,
+            shadowRadius: 22,
+            elevation: 8,
+            overflow: 'hidden',
+          }}>
+          <Image
+            source={require('../assets/images/android-icon-foreground.png')}
+            style={{ width: 88, height: 88 }}
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
+        <Text
+          style={{
+            fontFamily: 'SpaceGrotesk_700Bold',
+            fontSize: 26,
+            letterSpacing: 8,
+            color: '#00E5FF',
+            textShadowColor: 'rgba(0, 229, 255, 0.4)',
+            textShadowOffset: { width: 0, height: 0 },
+            textShadowRadius: 12,
+          }}>
+          LEEPOOL
+        </Text>
+        <Text
+          style={{
+            fontFamily: 'SpaceGrotesk_400Regular',
+            fontSize: 10,
+            letterSpacing: 4,
+            color: '#4A5568',
+            marginTop: 4,
+          }}>
+          {t('management')}
+        </Text>
+      </View>
+
+      {/* ── Language Picker ── */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: 24 }}>
+        {LANGUAGES.map((lang) => (
+          <TouchableOpacity
+            key={lang.code}
+            onPress={() => i18n.changeLanguage(lang.code)}
+            activeOpacity={0.8}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: i18n.language.startsWith(lang.code)
+                ? 'rgba(0, 229, 255, 0.15)'
+                : '#131B2B',
+              borderWidth: 1,
+              borderColor: i18n.language.startsWith(lang.code)
+                ? '#00E5FF'
+                : 'rgba(136, 146, 176, 0.2)',
+            }}>
+            <Text style={{ fontSize: 18 }}>{lang.flag}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* ── E-posta / şifre (tek yol) ── */}
+      <View style={{ gap: 14 }}>
+        <CyberInput
+          value={email}
+          onChangeText={setEmail}
+          placeholder={t('emailPlaceholder')}
+          keyboardType="email-address"
+        />
+        <CyberInput
+          value={password}
+          onChangeText={setPassword}
+          placeholder={t('passwordPlaceholder')}
+          secureTextEntry
+        />
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={handleSignIn}
+          disabled={classicLoading}
+          style={{
+            backgroundColor: '#00E5FF',
+            borderRadius: 14,
+            paddingVertical: 16,
+            alignItems: 'center',
+            marginTop: 6,
+            opacity: classicLoading ? 0.7 : 1,
+          }}>
+          {classicLoading ? (
+            <ActivityIndicator size="small" color="#0A0F1A" />
+          ) : (
             <Text
               style={{
                 fontFamily: 'SpaceGrotesk_700Bold',
-                fontSize: 26,
-                letterSpacing: 8,
-                color: '#00E5FF',
-                textShadowColor: 'rgba(0, 229, 255, 0.4)',
-                textShadowOffset: { width: 0, height: 0 },
-                textShadowRadius: 12,
+                fontSize: 13,
+                letterSpacing: 3,
+                color: '#0A0F1A',
               }}>
-              LEEPOOL
+              {t('signIn').toUpperCase()}
             </Text>
-            <Text
-              style={{
-                fontFamily: 'SpaceGrotesk_400Regular',
-                fontSize: 10,
-                letterSpacing: 4,
-                color: '#4A5568',
-                marginTop: 4,
-              }}>
-              {t('management')}
-            </Text>
-          </View>
+          )}
+        </TouchableOpacity>
 
-          {/* ── Language Picker ── */}
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: 24 }}>
-            {LANGUAGES.map((lang) => (
-              <TouchableOpacity
-                key={lang.code}
-                onPress={() => i18n.changeLanguage(lang.code)}
-                activeOpacity={0.8}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 12,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: i18n.language.startsWith(lang.code)
-                    ? 'rgba(0, 229, 255, 0.15)'
-                    : '#131B2B',
-                  borderWidth: 1,
-                  borderColor: i18n.language.startsWith(lang.code)
-                    ? '#00E5FF'
-                    : 'rgba(136, 146, 176, 0.2)',
-                }}>
-                <Text style={{ fontSize: 18 }}>{lang.flag}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ── Tab Switcher ── */}
-          <View
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={handleSignUp}
+          disabled={classicLoading}
+          style={{
+            backgroundColor: 'transparent',
+            borderRadius: 14,
+            paddingVertical: 15,
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: 'rgba(0, 229, 255, 0.35)',
+          }}>
+          <Text
             style={{
-              flexDirection: 'row',
-              backgroundColor: '#131B2B',
-              borderRadius: 14,
-              padding: 4,
-              marginBottom: 28,
-              borderWidth: 1,
-              borderColor: 'rgba(0, 229, 255, 0.1)',
+              fontFamily: 'SpaceGrotesk_600SemiBold',
+              fontSize: 13,
+              letterSpacing: 3,
+              color: '#00E5FF',
             }}>
-            {(['classic', 'web3'] as Tab[]).map((t_) => {
-              const active = tab === t_;
-              const label = t_ === 'classic' ? t('tabClassic') : 'Web3';
-              return (
-                <TouchableOpacity
-                  key={t_}
-                  onPress={() => setTab(t_)}
-                  activeOpacity={0.85}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 11,
-                    borderRadius: 10,
-                    alignItems: 'center',
-                    backgroundColor: active ? 'rgba(0, 229, 255, 0.18)' : 'transparent',
-                    borderWidth: active ? 1 : 0,
-                    borderColor: active ? '#00E5FF' : 'transparent',
-                  }}>
-                  <Text
-                    style={{
-                      fontFamily: 'SpaceGrotesk_600SemiBold',
-                      fontSize: 12,
-                      letterSpacing: 2,
-                      color: active ? '#00E5FF' : '#4A5568',
-                    }}>
-                    {label.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* ─────────── CLASSIC TAB ─────────── */}
-          {tab === 'classic' && (
-            <View style={{ gap: 14 }}>
-              <CyberInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder={t('emailPlaceholder')}
-                keyboardType="email-address"
-              />
-              <CyberInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder={t('passwordPlaceholder')}
-                secureTextEntry
-              />
-
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={handleSignIn}
-                disabled={classicLoading}
-                style={{
-                  backgroundColor: '#00E5FF',
-                  borderRadius: 14,
-                  paddingVertical: 16,
-                  alignItems: 'center',
-                  marginTop: 6,
-                  opacity: classicLoading ? 0.7 : 1,
-                }}>
-                {classicLoading ? (
-                  <ActivityIndicator size="small" color="#0A0F1A" />
-                ) : (
-                  <Text
-                    style={{
-                      fontFamily: 'SpaceGrotesk_700Bold',
-                      fontSize: 13,
-                      letterSpacing: 3,
-                      color: '#0A0F1A',
-                    }}>
-                    {t('signIn').toUpperCase()}
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={handleSignUp}
-                disabled={classicLoading}
-                style={{
-                  backgroundColor: 'transparent',
-                  borderRadius: 14,
-                  paddingVertical: 15,
-                  alignItems: 'center',
-                  borderWidth: 1,
-                  borderColor: 'rgba(0, 229, 255, 0.35)',
-                }}>
-                <Text
-                  style={{
-                    fontFamily: 'SpaceGrotesk_600SemiBold',
-                    fontSize: 13,
-                    letterSpacing: 3,
-                    color: '#00E5FF',
-                  }}>
-                  {t('signUp').toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* ─────────── WEB3 TAB ─────────── */}
-          {tab === 'web3' && (
-            <View style={{ gap: 14 }}>
-              {/* nsec import */}
-              <View
-                style={{
-                  backgroundColor: '#131B2B',
-                  borderRadius: 16,
-                  padding: 16,
-                  borderWidth: 1,
-                  borderColor: 'rgba(168, 85, 247, 0.2)',
-                  gap: 12,
-                }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <Ionicons name="key-outline" size={16} color="#A855F7" />
-                  <Text
-                    style={{
-                      fontFamily: 'SpaceGrotesk_600SemiBold',
-                      fontSize: 10,
-                      letterSpacing: 3,
-                      color: '#A855F7',
-                    }}>
-                    {t('importNsec').toUpperCase()}
-                  </Text>
-                </View>
-                <CyberInput
-                  value={nsecInput}
-                  onChangeText={setNsecInput}
-                  placeholder="nsec1..."
-                  accent="#A855F7"
-                />
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={handleImportNsec}
-                  disabled={web3Loading}
-                  style={{
-                    backgroundColor: 'rgba(168, 85, 247, 0.18)',
-                    borderRadius: 12,
-                    paddingVertical: 14,
-                    alignItems: 'center',
-                    borderWidth: 1,
-                    borderColor: '#A855F7',
-                    opacity: web3Loading ? 0.7 : 1,
-                  }}>
-                  {web3Loading ? (
-                    <ActivityIndicator size="small" color="#A855F7" />
-                  ) : (
-                    <Text
-                      style={{
-                        fontFamily: 'SpaceGrotesk_700Bold',
-                        fontSize: 12,
-                        letterSpacing: 3,
-                        color: '#E879F9',
-                      }}>
-                      {t('importKey').toUpperCase()}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-
-              {/* Divider */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 4 }}>
-                <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(0, 229, 255, 0.12)' }} />
-                <Text
-                  style={{
-                    fontFamily: 'SpaceGrotesk_400Regular',
-                    fontSize: 10,
-                    letterSpacing: 2,
-                    color: '#4A5568',
-                  }}>
-                  {t('orDivider')}
-                </Text>
-                <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(0, 229, 255, 0.12)' }} />
-              </View>
-
-              {/* Generate anonymous identity */}
-              <View
-                style={{
-                  backgroundColor: '#131B2B',
-                  borderRadius: 16,
-                  padding: 16,
-                  borderWidth: 1,
-                  borderColor: 'rgba(0, 229, 255, 0.15)',
-                  gap: 12,
-                }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                  <Ionicons name="flash-outline" size={16} color="#00E5FF" />
-                  <Text
-                    style={{
-                      fontFamily: 'SpaceGrotesk_400Regular',
-                      fontSize: 10,
-                      letterSpacing: 2,
-                      color: '#8892B0',
-                    }}>
-                    {t('anonymousHint')}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={handleGenerate}
-                  disabled={generateLoading}
-                  style={{
-                    backgroundColor: 'rgba(0, 229, 255, 0.12)',
-                    borderRadius: 12,
-                    paddingVertical: 14,
-                    alignItems: 'center',
-                    borderWidth: 1,
-                    borderColor: '#00E5FF',
-                    opacity: generateLoading ? 0.7 : 1,
-                  }}>
-                  {generateLoading ? (
-                    <ActivityIndicator size="small" color="#00E5FF" />
-                  ) : (
-                    <Text
-                      style={{
-                        fontFamily: 'SpaceGrotesk_700Bold',
-                        fontSize: 12,
-                        letterSpacing: 3,
-                        color: '#00E5FF',
-                      }}>
-                      {t('generateIdentity').toUpperCase()}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+            {t('signUp').toUpperCase()}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </KeyboardWrapper>
+      ) : null}
+    </View>
   );
 }

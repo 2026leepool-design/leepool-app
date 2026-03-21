@@ -18,6 +18,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import Slider from '@react-native-community/slider';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '@/utils/supabase';
+import { getDefaultLightningWalletFromMetadata } from '@/utils/profileLightning';
 import { fetchSmartBookData, searchBooksMulti, fetchBooksByAuthor, type AuthorBookItem, type SmartBookData } from '@/utils/bookApi';
 import {
   pickCoverFromCamera,
@@ -114,7 +115,12 @@ export default function EditBookScreen() {
           const ttl = b.translated_titles ? JSON.stringify(b.translated_titles) : '';
           const isb = b.isbn ?? '';
           const cov = b.cover_url ?? null;
-          const lig = b.lightning_address ?? '';
+          let lig = b.lightning_address ?? '';
+          if (!lig.trim()) {
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+            const def = getDefaultLightningWalletFromMetadata(authUser);
+            if (def) lig = def;
+          }
           const rs = b.reading_started_at ? new Date(b.reading_started_at) : null;
           const rf = b.reading_finished_at ? new Date(b.reading_finished_at) : null;
           setTitle(tit);

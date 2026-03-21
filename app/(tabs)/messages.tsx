@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SimplePool } from 'nostr-tools/pool';
 import * as nip04 from 'nostr-tools/nip04';
@@ -178,8 +178,8 @@ export default function MessagesScreen() {
 
     try {
       const [sent, received] = await Promise.all([
-        pool.querySync(RELAYS, filter),
-        pool.querySync(RELAYS, filterIncoming),
+        pool.querySync([...RELAYS], filter),
+        pool.querySync([...RELAYS], filterIncoming),
       ]);
 
       // Merge and deduplicate by event id
@@ -369,7 +369,7 @@ export default function MessagesScreen() {
             <ConversationCard
               conv={item}
               onPress={() =>
-                router.push({ pathname: '/chat', params: { pubkey: item.peerNpub } })
+                router.push(`/messages/${encodeURIComponent(item.peerNpub)}` as Href)
               }
             />
           )}

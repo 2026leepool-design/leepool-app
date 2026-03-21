@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
@@ -177,8 +177,9 @@ export default function MarketTabScreen() {
           const [booksRes, keys, rates] = await Promise.all([
             supabase
               .from('books')
-              .select('id, title, author, cover_url, price_sats, condition, isbn, translator, first_publish_year, created_at, seller_npub')
-              .eq('is_for_sale', true)
+              .select('id, title, author, cover_url, price_sats, condition, isbn, translator, first_publish_year, created_at, seller_npub, sale_status, is_for_sale')
+              .or('sale_status.eq.for_sale,is_for_sale.eq.true')
+              .neq('sale_status', 'sold')
               .order('created_at', { ascending: false }),
             loadKeys(),
             fetchBitcoinRates(),
@@ -244,7 +245,7 @@ export default function MarketTabScreen() {
             <MarketCard
               book={item}
               t={t}
-              onPress={() => router.push({ pathname: '/synopsis', params: { id: item.id } })}
+              onPress={() => router.push(`/book/${item.id}` as Href)}
               isOwnBook={!!myNpub && !!item.seller_npub && item.seller_npub === myNpub}
               btcRates={btcRates}
             />

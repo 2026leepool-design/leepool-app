@@ -16,6 +16,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '@/utils/supabase';
+import { getDefaultLightningWalletFromMetadata } from '@/utils/profileLightning';
 import { fetchSmartBookData, searchBooksMulti, type SmartBookData } from '@/utils/bookApi';
 import { analyzeBookCover } from '@/utils/gemini';
 import {
@@ -279,6 +280,9 @@ export default function AddBookScreen() {
         } catch {}
       }
       const { data: { user } } = await supabase.auth.getUser();
+      const lnFromForm = lightningAddress.trim();
+      const lnResolved =
+        lnFromForm || getDefaultLightningWalletFromMetadata(user) || null;
       const { error } = await supabase.from('books').insert([
         {
           title: title.trim(),
@@ -292,7 +296,7 @@ export default function AddBookScreen() {
           read_pages: 0,
           status: 'bought',
           cover_url: coverUrl || null,
-          lightning_address: lightningAddress.trim() || null,
+          lightning_address: lnResolved,
           user_id: user?.id ?? null,
         },
       ]);

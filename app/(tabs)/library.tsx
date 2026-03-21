@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
@@ -31,6 +31,8 @@ type Book = {
   cover_url: string | null;
   isbn: string | null;
   is_for_sale: boolean | null;
+  sale_status?: string | null;
+  is_purchased?: boolean | null;
   price_sats: number | null;
   translated_titles: Array<{ lang: string; title: string; isOriginal?: boolean }> | null;
   created_at?: string;
@@ -215,16 +217,27 @@ function BookCard({
               </Text>
             </View>
             {/* For-sale badge */}
-            {book.is_for_sale ? (
-              <View
-                className="flex-row items-center gap-1 px-2 py-1 rounded-full"
-                style={{ backgroundColor: 'rgba(0, 255, 157, 0.1)', borderWidth: 1, borderColor: 'rgba(0, 255, 157, 0.3)' }}>
-                <Text style={{ fontSize: 9 }}>⚡</Text>
-                <Text style={{ color: '#00FF9D', fontSize: 9, fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                  {book.price_sats ? `${book.price_sats.toLocaleString()}` : '—'}
-                </Text>
-              </View>
-            ) : null}
+            <View className="flex-row flex-wrap gap-1 justify-end">
+              {book.sale_status === 'for_sale' || book.is_for_sale ? (
+                <View
+                  className="flex-row items-center gap-1 px-2 py-1 rounded-full"
+                  style={{ backgroundColor: 'rgba(0, 255, 157, 0.1)', borderWidth: 1, borderColor: 'rgba(0, 255, 157, 0.3)' }}>
+                  <Text style={{ fontSize: 9 }}>⚡</Text>
+                  <Text style={{ color: '#00FF9D', fontSize: 9, fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                    {book.price_sats ? `${book.price_sats.toLocaleString()}` : '—'}
+                  </Text>
+                </View>
+              ) : null}
+              {book.is_purchased ? (
+                <View
+                  className="px-2 py-1 rounded-full"
+                  style={{ backgroundColor: 'rgba(0, 229, 255, 0.12)', borderWidth: 1, borderColor: 'rgba(0, 229, 255, 0.35)' }}>
+                  <Text style={{ color: '#00E5FF', fontSize: 8, fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                    {t('purchasedInAppBadge')}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </View>
 
           {/* Synopsis */}
@@ -391,7 +404,7 @@ export default function LibraryTabScreen() {
           const { data: { user } } = await supabase.auth.getUser();
           const query = supabase
             .from('books')
-            .select('id, title, author, total_pages, read_pages, current_value, ia_synopsis, status, cover_url, isbn, is_for_sale, price_sats, translated_titles, created_at')
+            .select('id, title, author, total_pages, read_pages, current_value, ia_synopsis, status, cover_url, isbn, is_for_sale, sale_status, is_purchased, price_sats, translated_titles, created_at')
             .order('created_at', { ascending: false });
           if (user?.id) query.eq('user_id', user.id);
           const { data, error } = await query;
@@ -418,7 +431,9 @@ export default function LibraryTabScreen() {
         list = list.filter((b) => (b.read_pages ?? 0) > 0 && b.status !== 'read');
         break;
       case 'for_sale':
-        list = list.filter((b) => b.is_for_sale === true);
+        list = list.filter(
+          (b) => b.sale_status === 'for_sale' || b.is_for_sale === true
+        );
         break;
       case 'finished':
         list = list.filter((b) => b.status === 'read' || ((b.read_pages ?? 0) >= (b.total_pages ?? 1) && (b.total_pages ?? 0) > 0));
@@ -459,7 +474,7 @@ export default function LibraryTabScreen() {
   }, [router]);
 
   const handleOpenSynopsis = useCallback((book: Book) => {
-    router.push({ pathname: '/synopsis', params: { id: book.id } });
+    router.push(`/book/${book.id}` as Href);
   }, [router]);
 
   const handleGenerateAI = useCallback(async (book: Book) => {

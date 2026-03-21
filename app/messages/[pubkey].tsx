@@ -1,8 +1,9 @@
 import { useLocalSearchParams } from 'expo-router';
 import { P2PChatView } from '@/components/P2PChatView';
 
-export default function ChatScreen() {
+export default function MessagesThreadScreen() {
   const { pubkey } = useLocalSearchParams<{ pubkey: string }>();
-  const peerNpub = typeof pubkey === 'string' ? pubkey.trim() : '';
+  const raw = typeof pubkey === 'string' ? pubkey : '';
+  const peerNpub = raw ? decodeURIComponent(raw) : '';
   return <P2PChatView peerNpub={peerNpub} />;
 }

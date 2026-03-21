@@ -1,3 +1,5 @@
+import 'react-native-get-random-values';
+
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { generateSecretKey, getPublicKey, finalizeEvent } from 'nostr-tools/pure';
@@ -123,7 +125,7 @@ export async function sendEncryptedMessage(
 
   const signedEvent = finalizeEvent(eventTemplate, keys.privateKey);
   const pool = new SimplePool();
-  const pubs = pool.publish(RELAYS, signedEvent);
+  const pubs = pool.publish([...RELAYS], signedEvent);
   await Promise.all(pubs);
   pool.destroy();
 }

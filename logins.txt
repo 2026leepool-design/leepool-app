@@ -4,5 +4,6 @@ Expo LeePool Altea2026!
 Supabase 2026leepool-design  (2026leepool@gmail.com)
 GitHub  2026leepool-design 
 Netlify (Github login) myleepool
+Vercel google login
 Linear Savass
 Afiliados de Amazon.es	leepool-21

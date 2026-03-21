@@ -23,6 +23,7 @@ export default function ProfileScreen() {
 
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [defaultLightningWallet, setDefaultLightningWallet] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(true);
@@ -39,6 +40,8 @@ export default function ProfileScreen() {
           if (!isMounted || !user) return;
           setEmail(user.email ?? '');
           setDisplayName(user.user_metadata?.display_name ?? user.email?.split('@')[0] ?? '');
+          const ln = user.user_metadata?.default_lightning_address;
+          setDefaultLightningWallet(typeof ln === 'string' ? ln : '');
         } catch {
           // silently fail
         } finally {
@@ -58,7 +61,10 @@ export default function ProfileScreen() {
     setSaving(true);
     try {
       const { error } = await supabase.auth.updateUser({
-        data: { display_name: displayName.trim() },
+        data: {
+          display_name: displayName.trim(),
+          default_lightning_address: defaultLightningWallet.trim(),
+        },
       });
       if (error) throw error;
       Alert.alert(t('success'), t('profileUpdated'));
@@ -151,11 +157,24 @@ export default function ProfileScreen() {
               accent="#00E5FF"
             />
 
+            <FieldLabel>{t('defaultLightningWallet')}</FieldLabel>
+            <CyberInput
+              value={defaultLightningWallet}
+              onChangeText={setDefaultLightningWallet}
+              placeholder={t('defaultLightningWalletPlaceholder')}
+              accent="#00E5FF"
+            />
+            <Text
+              className="text-[#5A6578] text-[10px] mb-4 leading-4"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('defaultLightningWalletHint')}
+            </Text>
+
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={handleSaveProfile}
               disabled={saving}
-              className="rounded-2xl py-4 items-center mt-4"
+              className="rounded-2xl py-4 items-center mt-0"
               style={{
                 backgroundColor: saving ? 'rgba(0, 229, 255, 0.5)' : 'rgba(0, 229, 255, 0.15)',
                 borderWidth: 1,

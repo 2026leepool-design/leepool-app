@@ -11,7 +11,7 @@ import {
   Modal,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
@@ -389,7 +389,7 @@ export default function LibraryScreen() {
 
   const handleOpenSynopsis = useCallback(
     (book: Book) => {
-      router.push({ pathname: '/synopsis', params: { id: book.id } });
+      router.push(`/book/${book.id}` as Href);
     },
     [router]
   );
