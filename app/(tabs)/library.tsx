@@ -16,6 +16,8 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
 import { generateBookSynopsis } from '@/utils/gemini';
+import { BookCardMetaChips } from '@/components/BookCard';
+import { isListedForSale } from '@/utils/bookListing';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,7 +29,7 @@ type Book = {
   read_pages: number;
   current_value: number;
   ia_synopsis: string | null;
-  status: string;
+  status?: string;
   cover_url: string | null;
   isbn: string | null;
   is_for_sale: boolean | null;
@@ -36,6 +38,8 @@ type Book = {
   price_sats: number | null;
   translated_titles: Array<{ lang: string; title: string; isOriginal?: boolean }> | null;
   created_at?: string;
+  page_count?: number | null;
+  average_rating?: number | null;
 };
 
 type FilterMode = 'all' | 'reading' | 'for_sale' | 'finished' | 'unread';
@@ -190,7 +194,7 @@ function BookCard({
                   className="text-[#00E5FF] text-base leading-tight"
                   style={{ fontFamily: 'SpaceGrotesk_700Bold' }}
                   numberOfLines={2}>
-                  {book.title}
+                  {book.title ?? '—'}
                 </Text>
               </TouchableOpacity>
               {(() => {
@@ -213,18 +217,27 @@ function BookCard({
               <Text
                 className="text-[#8892B0] text-[10px] tracking-widest mt-1"
                 style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-                {book.author.toUpperCase()}
+                {String(book.author ?? '').toUpperCase()}
               </Text>
+              <BookCardMetaChips
+                page_count={book.page_count}
+                total_pages={book.total_pages}
+                average_rating={book.average_rating}
+              />
             </View>
             {/* For-sale badge */}
             <View className="flex-row flex-wrap gap-1 justify-end">
-              {book.sale_status === 'for_sale' || book.is_for_sale ? (
+              {isListedForSale(book) ? (
                 <View
                   className="flex-row items-center gap-1 px-2 py-1 rounded-full"
                   style={{ backgroundColor: 'rgba(0, 255, 157, 0.1)', borderWidth: 1, borderColor: 'rgba(0, 255, 157, 0.3)' }}>
                   <Text style={{ fontSize: 9 }}>⚡</Text>
                   <Text style={{ color: '#00FF9D', fontSize: 9, fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                    {book.price_sats ? `${book.price_sats.toLocaleString()}` : '—'}
+                    {(() => {
+                      const ps = book.price_sats;
+                      const n = ps == null ? NaN : Number(ps);
+                      return Number.isFinite(n) ? n.toLocaleString() : '—';
+                    })()}
                   </Text>
                 </View>
               ) : null}
@@ -387,13 +400,16 @@ export default function LibraryTabScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
 
-  const [books, setBooks] = useState<Book[]>([]);
+  const [mainBooks, setMainBooks] = useState<Book[]>([]);
+  const [listedBooks, setListedBooks] = useState<Book[]>([]);
+  const [soldBooks, setSoldBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [sortMode, setSortMode] = useState<SortMode>('date');
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [sortModalVisible, setSortModalVisible] = useState(false);
   const [aiLoadingId, setAiLoadingId] = useState<string | null>(null);
+  const [soldHistoryOpen, setSoldHistoryOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -402,15 +418,34 @@ export default function LibraryTabScreen() {
         setLoading(true);
         try {
           const { data: { user } } = await supabase.auth.getUser();
-          const query = supabase
-            .from('books')
-            .select('id, title, author, total_pages, read_pages, current_value, ia_synopsis, status, cover_url, isbn, is_for_sale, sale_status, is_purchased, price_sats, translated_titles, created_at')
-            .order('created_at', { ascending: false });
-          if (user?.id) query.eq('user_id', user.id);
-          const { data, error } = await query;
-          if (error) throw error;
+          const uid = user?.id;
+          const cols =
+            'id, title, author, total_pages, read_pages, current_value, ia_synopsis, status, cover_url, isbn, is_for_sale, sale_status, is_purchased, price_sats, translated_titles, created_at, page_count, average_rating';
+          if (!uid) {
+            if (!isMounted) return;
+            setMainBooks([]);
+            setListedBooks([]);
+            setSoldBooks([]);
+            return;
+          }
+          const forUser = () =>
+            supabase
+              .from('books')
+              .select(cols)
+              .eq('user_id', uid)
+              .order('created_at', { ascending: false });
+          const [mainRes, listedRes, soldRes] = await Promise.all([
+            forUser().neq('sale_status', 'sold'),
+            forUser().eq('sale_status', 'for_sale'),
+            forUser().eq('sale_status', 'sold'),
+          ]);
+          if (mainRes.error) throw mainRes.error;
+          if (listedRes.error) throw listedRes.error;
+          if (soldRes.error) throw soldRes.error;
           if (!isMounted) return;
-          setBooks((data ?? []) as Book[]);
+          setMainBooks((mainRes.data ?? []) as Book[]);
+          setListedBooks((listedRes.data ?? []) as Book[]);
+          setSoldBooks((soldRes.data ?? []) as Book[]);
         } catch {
           // silently fail
         } finally {
@@ -423,20 +458,21 @@ export default function LibraryTabScreen() {
   );
 
   const displayedBooks = useMemo(() => {
-    let list = [...books];
+    const source = filterMode === 'for_sale' ? listedBooks : mainBooks;
+    let list = [...source];
 
-    // Filter
+    const isFinished = (b: Book) =>
+      b.status === 'read' ||
+      ((b.read_pages ?? 0) >= (b.total_pages ?? 1) && (b.total_pages ?? 0) > 0);
+
     switch (filterMode) {
       case 'reading':
-        list = list.filter((b) => (b.read_pages ?? 0) > 0 && b.status !== 'read');
+        list = list.filter((b) => (b.read_pages ?? 0) > 0 && !isFinished(b));
         break;
       case 'for_sale':
-        list = list.filter(
-          (b) => b.sale_status === 'for_sale' || b.is_for_sale === true
-        );
         break;
       case 'finished':
-        list = list.filter((b) => b.status === 'read' || ((b.read_pages ?? 0) >= (b.total_pages ?? 1) && (b.total_pages ?? 0) > 0));
+        list = list.filter((b) => isFinished(b));
         break;
       case 'unread':
         list = list.filter((b) => (b.read_pages ?? 0) === 0);
@@ -445,7 +481,6 @@ export default function LibraryTabScreen() {
         break;
     }
 
-    // Sort
     switch (sortMode) {
       case 'title_az':
         list.sort((a, b) => a.title.localeCompare(b.title));
@@ -457,21 +492,24 @@ export default function LibraryTabScreen() {
         list.sort((a, b) => (b.price_sats ?? 0) - (a.price_sats ?? 0));
         break;
       default:
-        // 'date' - already ordered by created_at from Supabase
         break;
     }
 
     return list;
-  }, [books, filterMode, sortMode]);
+  }, [mainBooks, listedBooks, filterMode, sortMode]);
 
   const handleDelete = useCallback(async (id: string) => {
     const { error } = await supabase.from('books').delete().eq('id', id);
-    if (!error) setBooks((prev) => prev.filter((b) => b.id !== id));
+    if (!error) {
+      setMainBooks((p) => p.filter((b) => b.id !== id));
+      setListedBooks((p) => p.filter((b) => b.id !== id));
+      setSoldBooks((p) => p.filter((b) => b.id !== id));
+    }
   }, []);
 
-  const handleEdit = useCallback((book: Book) => {
-    router.push({ pathname: '/edit-book', params: { id: book.id } });
-  }, [router]);
+  const handleEdit = useCallback(    (book: Book) => {
+      router.push(`/book/edit/${book.id}` as Href);
+    }, [router]);
 
   const handleOpenSynopsis = useCallback((book: Book) => {
     router.push(`/book/${book.id}` as Href);
@@ -483,7 +521,13 @@ export default function LibraryTabScreen() {
       const synopsis = await generateBookSynopsis(book.title, book.author);
       if (synopsis) {
         const { error } = await supabase.from('books').update({ ia_synopsis: synopsis }).eq('id', book.id);
-        if (!error) setBooks((prev) => prev.map((b) => b.id === book.id ? { ...b, ia_synopsis: synopsis } : b));
+        if (!error) {
+          const patch = (prev: Book[]) =>
+            prev.map((b) => (b.id === book.id ? { ...b, ia_synopsis: synopsis } : b));
+          setMainBooks(patch);
+          setListedBooks(patch);
+          setSoldBooks(patch);
+        }
       }
     } finally {
       setAiLoadingId(null);
@@ -515,12 +559,30 @@ export default function LibraryTabScreen() {
   return (
     <SafeAreaView className="flex-1 bg-[#0A0F1A]" edges={['top']}>
       {/* Header */}
-      <View className="flex-row items-center justify-between px-5 py-4">
+      <View className="flex-row items-center justify-between px-5 py-4 gap-2">
         <Text
-          className="text-[#00E5FF] text-xl tracking-[0.2em]"
+          className="text-[#00E5FF] text-xl tracking-[0.2em] flex-1 min-w-0"
           style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
           {t('tabLibrary').toUpperCase()}
         </Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setSoldHistoryOpen(true)}
+          disabled={soldBooks.length === 0}
+          className="flex-row items-center gap-1 rounded-xl px-3 py-2"
+          style={{
+            backgroundColor: 'rgba(251, 191, 36, 0.12)',
+            borderWidth: 1,
+            borderColor: soldBooks.length ? 'rgba(251, 191, 36, 0.45)' : 'rgba(136, 146, 176, 0.2)',
+            opacity: soldBooks.length ? 1 : 0.45,
+          }}>
+          <Ionicons name="archive-outline" size={16} color="#FBBF24" />
+          <Text
+            className="text-[#FBBF24] text-[10px] tracking-widest"
+            style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+            {t('soldHistoryButton')}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => router.push('/add-book')}
@@ -633,6 +695,98 @@ export default function LibraryTabScreen() {
         selected={sortMode}
         onSelect={setSortMode}
       />
+
+      <Modal
+        visible={soldHistoryOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSoldHistoryOpen(false)}>
+        <TouchableOpacity
+          activeOpacity={1}
+          className="flex-1 justify-end"
+          style={{ backgroundColor: 'rgba(0,0,0,0.82)' }}
+          onPress={() => setSoldHistoryOpen(false)}>
+          <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+            <View
+              className="rounded-t-3xl px-5 pt-5 pb-8"
+              style={{
+                backgroundColor: '#131B2B',
+                borderTopWidth: 1,
+                borderTopColor: 'rgba(251, 191, 36, 0.35)',
+                maxHeight: '78%',
+              }}>
+              <View className="flex-row items-center justify-between mb-4">
+                <Text
+                  className="text-[#FBBF24] text-lg tracking-widest"
+                  style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                  {t('soldBooksTitle')}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setSoldHistoryOpen(false)}
+                  className="w-10 h-10 rounded-full items-center justify-center"
+                  style={{ backgroundColor: 'rgba(136, 146, 176, 0.15)' }}>
+                  <Ionicons name="close" size={22} color="#8892B0" />
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={soldBooks}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setSoldHistoryOpen(false);
+                      router.push(`/book/${item.id}` as Href);
+                    }}
+                    className="rounded-2xl p-4 mb-3 flex-row"
+                    style={{
+                      backgroundColor: 'rgba(251, 191, 36, 0.06)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(251, 191, 36, 0.2)',
+                    }}>
+                    <View
+                      className="rounded-lg overflow-hidden mr-3"
+                      style={{ width: 48, height: 68, backgroundColor: '#1a2235' }}>
+                      {item.cover_url ? (
+                        <Image
+                          source={{ uri: item.cover_url }}
+                          style={{ width: 48, height: 68 }}
+                          contentFit="cover"
+                        />
+                      ) : (
+                        <View className="flex-1 items-center justify-center">
+                          <Ionicons name="book-outline" size={22} color="#4A5568" />
+                        </View>
+                      )}
+                    </View>
+                    <View className="flex-1 min-w-0 justify-center">
+                      <Text
+                        className="text-white text-sm"
+                        style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
+                        numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      <Text
+                        className="text-[#8892B0] text-[10px] mt-1 tracking-widest"
+                        style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                        {item.author.toUpperCase()}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <Text
+                    className="text-[#8892B0] text-sm text-center py-8"
+                    style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                    {t('noSoldBooksYet')}
+                  </Text>
+                }
+              />
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }

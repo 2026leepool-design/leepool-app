@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { Platform, View } from 'react-native';
@@ -10,6 +10,7 @@ import { loadKeys } from '@/utils/nostr';
 
 export default function TabsLayout() {
   const { t } = useTranslation();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const tabBarHeight = Platform.OS === 'ios' ? 80 : 56 + insets.bottom;
@@ -31,6 +32,13 @@ export default function TabsLayout() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (sessionUserId === undefined) return;
+    if (!sessionUserId) {
+      router.replace('/login');
+    }
+  }, [sessionUserId, router]);
 
   useEffect(() => {
     let cancelled = false;

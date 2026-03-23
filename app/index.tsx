@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/utils/supabase';
-import { loadKeys } from '@/utils/nostr';
 
 export default function Index() {
   const router = useRouter();
@@ -13,17 +12,13 @@ export default function Index() {
 
     async function checkAuth() {
       try {
-        const [sessionResult, nostrKeys] = await Promise.all([
-          supabase.auth.getSession(),
-          loadKeys(),
-        ]);
+        const sessionResult = await supabase.auth.getSession();
 
         if (!isMounted) return;
 
         const hasSession = !!sessionResult.data.session;
-        const hasNostr = !!nostrKeys;
 
-        if (hasSession || hasNostr) {
+        if (hasSession) {
           router.replace('/(tabs)/dashboard');
         } else {
           router.replace('/login');

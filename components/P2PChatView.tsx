@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  FlatList,
+  SectionList,
   ActivityIndicator,
   Keyboard,
   Alert,
@@ -33,6 +33,7 @@ import {
   type LocationShareMessage,
 } from '@/utils/offerMessages';
 import { completeP2PBookTransfer } from '@/utils/p2pSale';
+import { setDmReadCursor } from '@/utils/nostrDmReadCursor';
 
 type ChatMessage = {
   id: string;
@@ -41,9 +42,76 @@ type ChatMessage = {
   createdAt: number;
 };
 
-function truncateNpub(npub: string) {
-  if (!npub || npub.length <= 28) return npub;
-  return `${npub.slice(0, 12)}...${npub.slice(-12)}`;
+function shortUserId(id: string | null | undefined): string {
+  if (!id?.trim()) return '—';
+  const s = id.trim();
+  if (s.length <= 16) return s;
+  return `${s.slice(0, 8)}…${s.slice(-4)}`;
+}
+
+function formatMessageTime(tsSec: number, locale: string): string {
+  const d = new Date(tsSec * 1000);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) {
+    return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleString(locale, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+type ChatSection = {
+  bookId: string;
+  title: string;
+  data: ChatMessage[];
+};
+
+function buildMessageSections(messages: ChatMessage[], t: (k: string) => string): ChatSection[] {
+  const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
+  const sections: ChatSection[] = [];
+  let cur: ChatSection | null = null;
+
+  const ensureGeneral = () => {
+    if (!cur || cur.bookId !== '_general') {
+      cur = { bookId: '_general', title: t('chatSectionGeneral'), data: [] };
+      sections.push(cur);
+    }
+  };
+
+  for (const m of sorted) {
+    const s = tryParseStructuredNostrMessage(m.text);
+    let bid: string | null = null;
+    let title: string | null = null;
+    if (
+      s &&
+      (s.type === 'offer' ||
+        s.type === 'offer_accepted' ||
+        s.type === 'offer_rejected' ||
+        s.type === 'offer_cancelled')
+    ) {
+      bid = s.bookId;
+      const bt = 'bookTitle' in s ? s.bookTitle : undefined;
+      title = bt?.trim() ? bt.trim() : bid;
+    }
+    if (bid) {
+      if (!cur || cur.bookId !== bid) {
+        cur = { bookId: bid, title: title ?? bid, data: [] };
+        sections.push(cur);
+      }
+      cur.data.push(m);
+    } else {
+      if (!cur) ensureGeneral();
+      cur!.data.push(m);
+    }
+  }
+  return sections;
 }
 
 type P2PChatViewProps = {
@@ -51,7 +119,7 @@ type P2PChatViewProps = {
 };
 
 export function P2PChatView({ peerNpub }: P2PChatViewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const peerNpubTrimmed = peerNpub?.trim() || '';
 
@@ -61,6 +129,9 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [myNpub, setMyNpub] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [peerUserId, setPeerUserId] = useState<string | null>(null);
+  const [locallyTerminalOffers, setLocallyTerminalOffers] = useState<string[]>([]);
   const [payingOffer, setPayingOffer] = useState<string | null>(null);
   const [completingSale, setCompletingSale] = useState<string | null>(null);
   const [sendingLocation, setSendingLocation] = useState(false);
@@ -69,14 +140,96 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
   const subRef = useRef<{ close: () => void } | null>(null);
   const keysRef = useRef<Awaited<ReturnType<typeof loadKeys>>>(null);
   const peerHexRef = useRef<string | null>(null);
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<SectionList<ChatMessage, ChatSection>>(null);
+
+  const addLocalTerminalOffer = useCallback((offerId: string) => {
+    setLocallyTerminalOffers((p) => (p.includes(offerId) ? p : [...p, offerId]));
+  }, []);
+
+  /** Red / iptal / yerel tamamlananlar — offer_accepted burada yok (alıcı ödeme UI’si için). */
+  const terminalOfferIds = useMemo(() => {
+    const ids = new Set<string>();
+    locallyTerminalOffers.forEach((id) => ids.add(id));
+    for (const m of messages) {
+      const s = tryParseStructuredNostrMessage(m.text);
+      if (
+        s &&
+        (s.type === 'offer_rejected' || s.type === 'offer_cancelled') &&
+        'offerId' in s &&
+        typeof (s as { offerId?: string }).offerId === 'string'
+      ) {
+        ids.add((s as { offerId: string }).offerId);
+      }
+    }
+    return ids;
+  }, [messages, locallyTerminalOffers]);
+
+  const acceptedOfferIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of messages) {
+      const s = tryParseStructuredNostrMessage(m.text);
+      if (
+        s?.type === 'offer_accepted' &&
+        'offerId' in s &&
+        typeof (s as { offerId?: string }).offerId === 'string'
+      ) {
+        ids.add((s as { offerId: string }).offerId);
+      }
+    }
+    return ids;
+  }, [messages]);
+
+  const sections = useMemo(
+    () => buildMessageSections(messages, t),
+    [messages, t]
+  );
 
   useEffect(() => {
     const sub = Keyboard.addListener('keyboardDidShow', () => {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      setTimeout(() => {
+        const list = flatListRef.current as { scrollToEnd?: (o: { animated?: boolean }) => void } | null;
+        list?.scrollToEnd?.({ animated: true });
+      }, 100);
     });
     return () => sub.remove();
   }, []);
+
+  useEffect(() => {
+    if (!peerNpubTrimmed) return;
+    let cancel = false;
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!cancel && user?.id) setMyUserId(user.id);
+      const { data, error: rpcErr } = await supabase.rpc('profile_id_by_npub', {
+        p_npub: peerNpubTrimmed,
+      });
+      if (cancel) return;
+      if (rpcErr) {
+        setPeerUserId(null);
+        return;
+      }
+      const row = Array.isArray(data) ? data[0] : data;
+      const uid =
+        row && typeof row === 'object' && row !== null && 'user_id' in row
+          ? String((row as { user_id: string }).user_id)
+          : null;
+      setPeerUserId(uid);
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [peerNpubTrimmed]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const k = keysRef.current;
+    const peer = peerHexRef.current;
+    if (!k || !peer) return;
+    const maxTs = Math.max(...messages.map((m) => m.createdAt));
+    if (Number.isFinite(maxTs) && maxTs > 0) {
+      void setDmReadCursor(k.publicKey, peer, maxTs);
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (!peerNpubTrimmed) {
@@ -92,7 +245,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
         const keys = await loadKeys();
         if (!isMounted) return;
         if (!keys) {
-          setError('Nostr kimliği bulunamadı.');
+          setError(t('nostrIdentityMissing'));
           setLoading(false);
           return;
         }
@@ -102,7 +255,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
 
         const decoded = nip19.decode(peerNpubTrimmed);
         if (decoded.type !== 'npub') {
-          setError('Geçersiz npub.');
+          setError(t('invalidNpubContact'));
           setLoading(false);
           return;
         }
@@ -300,11 +453,12 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
           buyerNpub: offer.buyerNpub,
         };
         await sendEncryptedMessage(peerNpubTrimmed, buildOfferAcceptedMessage(payload));
+        addLocalTerminalOffer(offer.offerId);
       } catch (e) {
         Alert.alert(t('error'), e instanceof Error ? e.message : String(e));
       }
     },
-    [peerNpubTrimmed, t]
+    [peerNpubTrimmed, t, addLocalTerminalOffer]
   );
 
   const handleRejectOffer = useCallback(
@@ -318,11 +472,12 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
             offerId: offer.offerId,
           })
         );
+        addLocalTerminalOffer(offer.offerId);
       } catch (e) {
         Alert.alert(t('error'), e instanceof Error ? e.message : String(e));
       }
     },
-    [peerNpubTrimmed, t]
+    [peerNpubTrimmed, t, addLocalTerminalOffer]
   );
 
   const handlePayAccepted = useCallback(
@@ -347,6 +502,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
           t('error'),
           t('lightningWalletOpenFailed')
         );
+        addLocalTerminalOffer(accepted.offerId);
       } catch (e) {
         if (e instanceof Error && !e.message.includes('Payment')) {
           // payLightningInvoice already alerts
@@ -355,7 +511,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
         setPayingOffer(null);
       }
     },
-    [t]
+    [t, addLocalTerminalOffer]
   );
 
   const handleCancelAccepted = useCallback(
@@ -368,11 +524,12 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
             offerId: accepted.offerId,
           })
         );
+        addLocalTerminalOffer(accepted.offerId);
       } catch (e) {
         Alert.alert(t('error'), e instanceof Error ? e.message : String(e));
       }
     },
-    [peerNpubTrimmed, t]
+    [peerNpubTrimmed, t, addLocalTerminalOffer]
   );
 
   const handleConfirmSale = useCallback(
@@ -385,6 +542,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
           buyerNpub: accepted.buyerNpub,
         });
         if (res.ok) {
+          addLocalTerminalOffer(accepted.offerId);
           Alert.alert(t('success'), t('p2pSaleCompleted'));
         } else {
           Alert.alert(t('error'), res.message);
@@ -393,7 +551,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
         setCompletingSale(null);
       }
     },
-    [t]
+    [t, addLocalTerminalOffer]
   );
 
   const renderStructuredBubble = useCallback(
@@ -405,6 +563,12 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
       if (structured.type === 'location') {
         const loc = structured as LocationShareMessage;
         return (
+          <View
+            style={{
+              marginBottom: 14,
+              zIndex: 4,
+              elevation: Platform.OS === 'android' ? 6 : 0,
+            }}>
           <View
             className="rounded-2xl px-4 py-3 gap-3"
             style={{
@@ -455,6 +619,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
               </Text>
             </TouchableOpacity>
           </View>
+          </View>
         );
       }
 
@@ -464,6 +629,8 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
 
       if (structured.type === 'offer') {
         const o = structured as OfferPendingMessage;
+        const offerSettled =
+          terminalOfferIds.has(o.offerId) || acceptedOfferIds.has(o.offerId);
         if (!item.isFromMe) {
           return (
             <View
@@ -481,24 +648,32 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
                   amount: o.amount,
                 })}
               </Text>
-              <View className="flex-row gap-2">
-                <TouchableOpacity
-                  onPress={() => void handleAcceptOffer(o)}
-                  className="flex-1 rounded-xl py-2.5 items-center"
-                  style={{ backgroundColor: 'rgba(0, 255, 157, 0.2)', borderWidth: 1, borderColor: '#00FF9D' }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#00FF9D', fontSize: 12 }}>
-                    {t('p2pAccept')}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => void handleRejectOffer(o)}
-                  className="flex-1 rounded-xl py-2.5 items-center"
-                  style={{ backgroundColor: 'rgba(255, 80, 80, 0.15)', borderWidth: 1, borderColor: '#FF5050' }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#FF5050', fontSize: 12 }}>
-                    {t('p2pReject')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              {offerSettled ? (
+                <Text
+                  className="text-xs"
+                  style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#8892B0' }}>
+                  {t('p2pOfferActionsDone')}
+                </Text>
+              ) : (
+                <View className="flex-row gap-2">
+                  <TouchableOpacity
+                    onPress={() => void handleAcceptOffer(o)}
+                    className="flex-1 rounded-xl py-2.5 items-center"
+                    style={{ backgroundColor: 'rgba(0, 255, 157, 0.2)', borderWidth: 1, borderColor: '#00FF9D' }}>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#00FF9D', fontSize: 12 }}>
+                      {t('p2pAccept')}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => void handleRejectOffer(o)}
+                    className="flex-1 rounded-xl py-2.5 items-center"
+                    style={{ backgroundColor: 'rgba(255, 80, 80, 0.15)', borderWidth: 1, borderColor: '#FF5050' }}>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#FF5050', fontSize: 12 }}>
+                      {t('p2pReject')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           );
         }
@@ -519,6 +694,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
 
       if (structured.type === 'offer_accepted') {
         const a = structured as OfferAcceptedMessage;
+        const acceptedDone = terminalOfferIds.has(a.offerId);
         if (!item.isFromMe) {
           const busy = payingOffer === a.offerId;
           return (
@@ -534,29 +710,38 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
                 style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#00FF9D' }}>
                 {t('p2pOfferApprovedBuyer')}
               </Text>
-              <View className="flex-row gap-2">
-                <TouchableOpacity
-                  onPress={() => void handlePayAccepted(a)}
-                  disabled={busy}
-                  className="flex-1 rounded-xl py-2.5 items-center"
-                  style={{ backgroundColor: 'rgba(255, 215, 0, 0.2)', borderWidth: 1, borderColor: '#FFD700' }}>
-                  {busy ? (
-                    <ActivityIndicator size="small" color="#FFD700" />
-                  ) : (
-                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#FFD700', fontSize: 12 }}>
-                      {t('p2pPay')}
+              {acceptedDone ? (
+                <Text
+                  className="text-xs"
+                  style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#8892B0' }}>
+                  {t('p2pOfferActionsDone')}
+                </Text>
+              ) : (
+                <View className="flex-row gap-2">
+                  <TouchableOpacity
+                    onPress={() => void handlePayAccepted(a)}
+                    disabled={busy}
+                    className="flex-1 rounded-xl py-2.5 items-center"
+                    style={{ backgroundColor: 'rgba(255, 215, 0, 0.2)', borderWidth: 1, borderColor: '#FFD700' }}>
+                    {busy ? (
+                      <ActivityIndicator size="small" color="#FFD700" />
+                    ) : (
+                      <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#FFD700', fontSize: 12 }}>
+                        {t('p2pPay')}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => void handleCancelAccepted(a)}
+                    disabled={busy}
+                    className="flex-1 rounded-xl py-2.5 items-center"
+                    style={{ backgroundColor: 'rgba(136, 146, 176, 0.2)', borderWidth: 1, borderColor: '#8892B0' }}>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#8892B0', fontSize: 12 }}>
+                      {t('p2pCancel')}
                     </Text>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => void handleCancelAccepted(a)}
-                  className="flex-1 rounded-xl py-2.5 items-center"
-                  style={{ backgroundColor: 'rgba(136, 146, 176, 0.2)', borderWidth: 1, borderColor: '#8892B0' }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#8892B0', fontSize: 12 }}>
-                    {t('p2pCancel')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           );
         }
@@ -572,19 +757,27 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
             <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#E879F9', fontSize: 13 }}>
               {t('p2pOfferAcceptedSellerHint', { amount: a.amount })}
             </Text>
-            <TouchableOpacity
-              onPress={() => void handleConfirmSale(a)}
-              disabled={saleBusy}
-              className="rounded-xl py-3 items-center"
-              style={{ backgroundColor: 'rgba(0, 255, 157, 0.2)', borderWidth: 1, borderColor: '#00FF9D' }}>
-              {saleBusy ? (
-                <ActivityIndicator size="small" color="#00FF9D" />
-              ) : (
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#00FF9D', fontSize: 12 }}>
-                  {t('p2pConfirmSale')}
-                </Text>
-              )}
-            </TouchableOpacity>
+            {acceptedDone ? (
+              <Text
+                className="text-xs"
+                style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#8892B0' }}>
+                {t('p2pOfferActionsDone')}
+              </Text>
+            ) : (
+              <TouchableOpacity
+                onPress={() => void handleConfirmSale(a)}
+                disabled={saleBusy}
+                className="rounded-xl py-3 items-center"
+                style={{ backgroundColor: 'rgba(0, 255, 157, 0.2)', borderWidth: 1, borderColor: '#00FF9D' }}>
+                {saleBusy ? (
+                  <ActivityIndicator size="small" color="#00FF9D" />
+                ) : (
+                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#00FF9D', fontSize: 12 }}>
+                    {t('p2pConfirmSale')}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         );
       }
@@ -618,6 +811,8 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
       payingOffer,
       completingSale,
       openLocationInExternalMaps,
+      terminalOfferIds,
+      acceptedOfferIds,
     ]
   );
 
@@ -625,9 +820,15 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
     ({ item }: { item: ChatMessage }) => {
       const structured = tryParseStructuredNostrMessage(item.text);
       const special = structured ? renderStructuredBubble(item, structured) : null;
+      const timeStr = formatMessageTime(item.createdAt, i18n.language);
 
       return (
         <View className={`mb-3 max-w-[90%] ${item.isFromMe ? 'self-end' : 'self-start'}`}>
+          <Text
+            className={`text-[10px] mb-1 ${item.isFromMe ? 'text-right' : 'text-left'}`}
+            style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#4A5568' }}>
+            {timeStr}
+          </Text>
           {special ? (
             special
           ) : (
@@ -653,7 +854,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
         </View>
       );
     },
-    [renderStructuredBubble]
+    [renderStructuredBubble, i18n.language]
   );
 
   if (loading) {
@@ -703,21 +904,45 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
         <TouchableOpacity onPress={() => router.back()} className="mr-3 p-1">
           <Ionicons name="arrow-back" size={24} color="#00E5FF" />
         </TouchableOpacity>
-        <Text
-          className="text-[#00E5FF] text-sm flex-1"
-          style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
-          numberOfLines={1}>
-          {truncateNpub(peerNpubTrimmed)} {t('chatWith')}
-        </Text>
+        <View className="flex-1 min-w-0">
+          <Text
+            className="text-[#8892B0] text-[10px]"
+            style={{ fontFamily: 'SpaceGrotesk_400Regular' }}
+            numberOfLines={1}>
+            {t('dmYouLabel')}: {shortUserId(myUserId)}
+          </Text>
+          <Text
+            className="text-[#00E5FF] text-xs mt-0.5"
+            style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
+            numberOfLines={1}>
+            {t('dmPeerLabel')}: {peerUserId ? shortUserId(peerUserId) : t('dmUserIdUnknown')}
+          </Text>
+        </View>
       </View>
 
-      <FlatList
+      <SectionList
         ref={flatListRef}
-        data={messages}
+        sections={sections}
         keyExtractor={(m) => m.id}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, paddingBottom: 8 }}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        onContentSizeChange={() => {
+          const list = flatListRef.current as { scrollToEnd?: (o: { animated?: boolean }) => void } | null;
+          list?.scrollToEnd?.({ animated: true });
+        }}
+        stickySectionHeadersEnabled={false}
+        renderSectionHeader={({ section }) => (
+          <View
+            className="pt-2 pb-2 mb-1"
+            style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(0, 229, 255, 0.12)' }}>
+            <Text
+              className="text-[#00E5FF] text-[10px] tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_700Bold' }}
+              numberOfLines={2}>
+              {section.title}
+            </Text>
+          </View>
+        )}
         ListEmptyComponent={
           <View className="py-12 items-center">
             <Ionicons name="chatbubbles-outline" size={40} color="#4A5568" />

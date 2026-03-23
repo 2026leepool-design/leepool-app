@@ -19,7 +19,14 @@ import Slider from '@react-native-community/slider';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '@/utils/supabase';
 import { getDefaultLightningWalletFromMetadata } from '@/utils/profileLightning';
-import { fetchSmartBookData, searchBooksMulti, fetchBooksByAuthor, type AuthorBookItem, type SmartBookData } from '@/utils/bookApi';
+import {
+  fetchSmartBookData,
+  searchBooksMulti,
+  sortSearchResultsByScreenAuthor,
+  fetchBooksByAuthor,
+  type AuthorBookItem,
+  type SmartBookData,
+} from '@/utils/bookApi';
 import {
   pickCoverFromCamera,
   pickCoverFromGallery,
@@ -27,6 +34,11 @@ import {
 } from '@/utils/coverPicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardWrapper } from '@/components/KeyboardWrapper';
+import {
+  commaSeparatedToArray,
+  arrayToCommaSeparated,
+  parseStringArrayField,
+} from '@/utils/bookMetadata';
 
 type BookData = {
   id: string;
@@ -42,6 +54,13 @@ type BookData = {
   first_publish_year: number | null;
   translated_titles: Array<{ lang: string; title: string; isOriginal?: boolean }> | null;
   lightning_address: string | null;
+  page_count?: number | null;
+  categories?: string[] | null;
+  average_rating?: number | null;
+  ratings_count?: number | null;
+  maturity_rating?: string | null;
+  language?: string | null;
+  subjects?: string[] | null;
 };
 
 export default function EditBookScreen() {
@@ -55,6 +74,7 @@ export default function EditBookScreen() {
   const [saving, setSaving] = useState(false);
   const [searchingCover, setSearchingCover] = useState(false);
   const [searchingDetails, setSearchingDetails] = useState(false);
+  const [fieldSearchBusy, setFieldSearchBusy] = useState<'title' | null>(null);
   const [focusField, setFocusField] = useState<string | null>(null);
   const [apiUpdatedFields, setApiUpdatedFields] = useState<Record<string, boolean>>({});
   const [isAuthorModalVisible, setIsAuthorModalVisible] = useState(false);
@@ -70,9 +90,15 @@ export default function EditBookScreen() {
   const [isbn, setIsbn] = useState('');
   const [translator, setTranslator] = useState('');
   const [firstPublishYear, setFirstPublishYear] = useState('');
+  const [pageCountMeta, setPageCountMeta] = useState('');
+  const [language, setLanguage] = useState('');
+  const [categoriesCsv, setCategoriesCsv] = useState('');
   const [translatedTitles, setTranslatedTitles] = useState<string>('');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [lightningAddress, setLightningAddress] = useState('');
+  const [averageRating, setAverageRating] = useState<number | null>(null);
+  const [ratingsCount, setRatingsCount] = useState<number | null>(null);
+  const [maturityRating, setMaturityRating] = useState<string | null>(null);
   const [readingStartedAt, setReadingStartedAt] = useState<Date | null>(null);
   const [readingFinishedAt, setReadingFinishedAt] = useState<Date | null>(null);
   const [datePickerTarget, setDatePickerTarget] = useState<'started' | 'finished' | null>(null);
@@ -82,10 +108,16 @@ export default function EditBookScreen() {
     author: string;
     totalPages: string;
     firstPublishYear: string;
+    pageCountMeta: string;
+    language: string;
+    categoriesCsv: string;
     translator: string;
     translatedTitles: string;
     isbn: string;
     coverUrl: string | null;
+    averageRating: number | null;
+    ratingsCount: number | null;
+    maturityRating: string | null;
   } | null>(null);
 
   useEffect(() => {
@@ -111,6 +143,10 @@ export default function EditBookScreen() {
           const aut = b.author ?? '';
           const tot = String(b.total_pages ?? '');
           const fpy = b.first_publish_year ? String(b.first_publish_year) : '';
+          const pcm =
+            b.page_count != null && b.page_count > 0 ? String(b.page_count) : '';
+          const lang = b.language?.trim() ?? '';
+          const csv = arrayToCommaSeparated(parseStringArrayField(b.categories));
           const trn = b.translator ?? '';
           const ttl = b.translated_titles ? JSON.stringify(b.translated_titles) : '';
           const isb = b.isbn ?? '';
@@ -130,20 +166,32 @@ export default function EditBookScreen() {
           setIsbn(isb);
           setTranslator(trn);
           setFirstPublishYear(fpy);
+          setPageCountMeta(pcm);
+          setLanguage(lang);
+          setCategoriesCsv(csv);
           setTranslatedTitles(ttl);
           setCoverUrl(cov);
           setLightningAddress(lig);
           setReadingStartedAt(rs);
           setReadingFinishedAt(rf);
+          setAverageRating(b.average_rating ?? null);
+          setRatingsCount(b.ratings_count ?? null);
+          setMaturityRating(b.maturity_rating?.trim() || null);
           initialValuesRef.current = {
             title: tit,
             author: aut,
             totalPages: tot,
             firstPublishYear: fpy,
+            pageCountMeta: pcm,
+            language: lang,
+            categoriesCsv: csv,
             translator: trn,
             translatedTitles: ttl,
             isbn: isb,
             coverUrl: cov,
+            averageRating: b.average_rating ?? null,
+            ratingsCount: b.ratings_count ?? null,
+            maturityRating: b.maturity_rating?.trim() || null,
           };
         }
       } catch {
@@ -193,7 +241,8 @@ export default function EditBookScreen() {
     }
     setSearchingCover(true);
     try {
-      const results = await searchBooksMulti(isbn.trim(), title.trim(), author.trim());
+      const raw = await searchBooksMulti(isbn.trim(), title.trim(), author.trim());
+      const results = sortSearchResultsByScreenAuthor(raw, author);
       if (results.length > 0) {
         setSearchResults(results);
         setIsSearchResultModalVisible(true);
@@ -207,23 +256,46 @@ export default function EditBookScreen() {
     }
   }, [title, author, isbn, t]);
 
-  const applyBookData = useCallback((result: {
-    title?: string;
-    author?: string;
-    totalPages?: number | null;
-    isbn?: string | null;
-    first_publish_year?: number | null;
-    translator?: string | null;
-    original_title?: string | null;
-    cover_url?: string | null;
-  }) => {
+  const applyBookData = useCallback((result: SmartBookData | AuthorBookItem) => {
     const updates: Record<string, boolean> = {};
     if (result.title) { setTitle(result.title); updates.title = true; }
-    if (result.author) { setAuthor(result.author); updates.author = true; }
+    if ('author' in result && result.author) { setAuthor(result.author); updates.author = true; }
     if (result.totalPages && result.totalPages > 0) { setTotalPages(String(result.totalPages)); updates.totalPages = true; }
     if (result.isbn) { setIsbn(result.isbn); updates.isbn = true; }
     if (result.first_publish_year) { setFirstPublishYear(String(result.first_publish_year)); updates.firstPublishYear = true; }
-    if (result.translator) { setTranslator(result.translator); updates.translator = true; }
+    if (result.page_count != null && result.page_count > 0) {
+      setPageCountMeta(String(result.page_count));
+      updates.pageCountMeta = true;
+    }
+    if (result.language?.trim()) {
+      setLanguage(result.language.trim());
+      updates.language = true;
+    }
+    if (result.categories?.length) {
+      setCategoriesCsv(arrayToCommaSeparated(result.categories));
+      updates.categoriesCsv = true;
+    }
+    if ('subjects' in result && result.subjects?.length) {
+      setCategoriesCsv((prev) => {
+        const merged = commaSeparatedToArray(prev);
+        const next = [...new Set([...merged, ...result.subjects!])];
+        return arrayToCommaSeparated(next);
+      });
+      updates.categoriesCsv = true;
+    }
+    if (result.average_rating != null && Number(result.average_rating) > 0) {
+      setAverageRating(Number(result.average_rating));
+      updates.averageRating = true;
+    }
+    if (result.ratings_count != null && result.ratings_count > 0) {
+      setRatingsCount(Math.round(Number(result.ratings_count)));
+      updates.ratingsCount = true;
+    }
+    if (result.maturity_rating?.trim()) {
+      setMaturityRating(result.maturity_rating.trim());
+      updates.maturityRating = true;
+    }
+    if ('translator' in result && result.translator) { setTranslator(result.translator); updates.translator = true; }
     if (result.original_title) {
       setTranslatedTitles(JSON.stringify([{ lang: 'orj', title: result.original_title, isOriginal: true }]));
       updates.translatedTitles = true;
@@ -294,7 +366,8 @@ export default function EditBookScreen() {
     }
     setSearchingDetails(true);
     try {
-      const results = await searchBooksMulti(isbn.trim(), title.trim(), author.trim());
+      const raw = await searchBooksMulti(isbn.trim(), title.trim(), author.trim());
+      const results = sortSearchResultsByScreenAuthor(raw, author);
       if (results.length > 0) {
         setSearchResults(results);
         setIsSearchResultModalVisible(true);
@@ -320,6 +393,29 @@ export default function EditBookScreen() {
     }
   }, [title, author, isbn, t]);
 
+  const handleSearchFromTitleField = useCallback(async () => {
+    const hint = title.trim();
+    if (!hint) {
+      Alert.alert(t('error'), t('fieldSearchNeedTitle'));
+      return;
+    }
+    setFieldSearchBusy('title');
+    try {
+      const raw = await searchBooksMulti('', hint, '');
+      const results = sortSearchResultsByScreenAuthor(raw, author);
+      if (results.length > 0) {
+        setSearchResults(results);
+        setIsSearchResultModalVisible(true);
+      } else {
+        Alert.alert(t('noResultsWeb'));
+      }
+    } catch {
+      Alert.alert(t('noResultsWeb'));
+    } finally {
+      setFieldSearchBusy(null);
+    }
+  }, [title, author, t]);
+
   const handleUpdate = useCallback(async () => {
     if (!id) return;
     if (!title.trim() || !author.trim() || !totalPages.trim()) {
@@ -335,6 +431,10 @@ export default function EditBookScreen() {
     }
 
     const year = firstPublishYear.trim() ? parseInt(firstPublishYear, 10) : null;
+    const pcmRaw = pageCountMeta.trim() ? parseInt(pageCountMeta, 10) : NaN;
+    const page_count =
+      !isNaN(pcmRaw) && pcmRaw > 0 ? pcmRaw : null;
+    const cats = commaSeparatedToArray(categoriesCsv);
     let parsedTitles: unknown = null;
     if (translatedTitles.trim()) {
       try {
@@ -357,6 +457,15 @@ export default function EditBookScreen() {
         isbn: isbn.trim() || null,
         translator: translator.trim() || null,
         first_publish_year: year && !isNaN(year) ? year : null,
+        page_count,
+        categories: cats.length ? cats : null,
+        subjects: parseStringArrayField(book?.subjects).length
+          ? parseStringArrayField(book?.subjects)
+          : null,
+        language: language.trim() || null,
+        average_rating: averageRating,
+        ratings_count: ratingsCount,
+        maturity_rating: maturityRating?.trim() || null,
         translated_titles: parsedTitles,
         cover_url: coverUrl || null,
         lightning_address: lightningAddress.trim() || null,
@@ -387,7 +496,30 @@ export default function EditBookScreen() {
     } finally {
       setSaving(false);
     }
-  }, [id, title, author, totalPages, readPages, isbn, translator, firstPublishYear, translatedTitles, coverUrl, lightningAddress, readingStartedAt, readingFinishedAt, t, router]);
+  }, [
+    id,
+    title,
+    author,
+    totalPages,
+    readPages,
+    isbn,
+    translator,
+    firstPublishYear,
+    pageCountMeta,
+    language,
+    categoriesCsv,
+    averageRating,
+    ratingsCount,
+    maturityRating,
+    translatedTitles,
+    coverUrl,
+    lightningAddress,
+    readingStartedAt,
+    readingFinishedAt,
+    book?.read_pages,
+    t,
+    router,
+  ]);
 
   const handleRollbackField = useCallback((field: keyof NonNullable<typeof initialValuesRef.current>) => {
     const initial = initialValuesRef.current;
@@ -397,10 +529,16 @@ export default function EditBookScreen() {
       case 'author': setAuthor(initial.author); break;
       case 'totalPages': setTotalPages(initial.totalPages); break;
       case 'firstPublishYear': setFirstPublishYear(initial.firstPublishYear); break;
+      case 'pageCountMeta': setPageCountMeta(initial.pageCountMeta); break;
+      case 'language': setLanguage(initial.language); break;
+      case 'categoriesCsv': setCategoriesCsv(initial.categoriesCsv); break;
       case 'translator': setTranslator(initial.translator); break;
       case 'translatedTitles': setTranslatedTitles(initial.translatedTitles); break;
       case 'isbn': setIsbn(initial.isbn); break;
       case 'coverUrl': setCoverUrl(initial.coverUrl); break;
+      case 'averageRating': setAverageRating(initial.averageRating); break;
+      case 'ratingsCount': setRatingsCount(initial.ratingsCount); break;
+      case 'maturityRating': setMaturityRating(initial.maturityRating); break;
       default: break;
     }
     setApiUpdatedFields((prev) => {
@@ -755,9 +893,9 @@ export default function EditBookScreen() {
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
               {t('bookTitle')}
             </Text>
-            <View className="flex-row items-center">
+            <View className="flex-row items-center gap-2">
               <TextInput
-                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                className="flex-1 rounded-xl px-4 py-3 text-white text-base min-w-0"
                 style={inputStyle('title')}
                 placeholderTextColor="#4A5568"
                 value={title}
@@ -765,6 +903,23 @@ export default function EditBookScreen() {
                 onFocus={() => setFocusField('title')}
                 onBlur={() => setFocusField(null)}
               />
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => void handleSearchFromTitleField()}
+                disabled={!!fieldSearchBusy || searchingDetails || searchingCover}
+                className="rounded-xl w-11 h-11 items-center justify-center shrink-0"
+                style={{
+                  backgroundColor: 'rgba(0, 229, 255, 0.15)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(0, 229, 255, 0.4)',
+                }}
+                accessibilityLabel={t('search')}>
+                {fieldSearchBusy === 'title' ? (
+                  <ActivityIndicator size="small" color="#00E5FF" />
+                ) : (
+                  <Ionicons name="search" size={20} color="#00E5FF" />
+                )}
+              </TouchableOpacity>
               <RollbackButton field="title" />
             </View>
           </View>
@@ -856,6 +1011,70 @@ export default function EditBookScreen() {
                 keyboardType="numeric"
               />
               <RollbackButton field="firstPublishYear" />
+            </View>
+          </View>
+
+          <View className="mb-4">
+            <Text
+              className="text-[#8892B0] text-[10px] mb-2 tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('metadataPageCount')}
+            </Text>
+            <View className="flex-row items-center">
+              <TextInput
+                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                style={inputStyle('pageCountMeta')}
+                placeholderTextColor="#4A5568"
+                value={pageCountMeta}
+                onChangeText={(txt) => setPageCountMeta(digitsOnly(txt))}
+                onFocus={() => setFocusField('pageCountMeta')}
+                onBlur={() => setFocusField(null)}
+                keyboardType="numeric"
+              />
+              <RollbackButton field="pageCountMeta" />
+            </View>
+          </View>
+
+          <View className="mb-4">
+            <Text
+              className="text-[#8892B0] text-[10px] mb-2 tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('bookMetaLanguage')}
+            </Text>
+            <View className="flex-row items-center">
+              <TextInput
+                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                style={inputStyle('language')}
+                placeholderTextColor="#4A5568"
+                placeholder="en, tr..."
+                value={language}
+                onChangeText={setLanguage}
+                onFocus={() => setFocusField('language')}
+                onBlur={() => setFocusField(null)}
+                autoCapitalize="none"
+              />
+              <RollbackButton field="language" />
+            </View>
+          </View>
+
+          <View className="mb-4">
+            <Text
+              className="text-[#8892B0] text-[10px] mb-2 tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('categoriesCommaHint')}
+            </Text>
+            <View className="flex-row items-center">
+              <TextInput
+                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
+                style={inputStyle('categoriesCsv')}
+                placeholderTextColor="#4A5568"
+                placeholder={t('categoriesCommaPlaceholder')}
+                value={categoriesCsv}
+                onChangeText={setCategoriesCsv}
+                onFocus={() => setFocusField('categoriesCsv')}
+                onBlur={() => setFocusField(null)}
+              />
+              <RollbackButton field="categoriesCsv" />
             </View>
           </View>
 

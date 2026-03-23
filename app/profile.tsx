@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/utils/supabase';
+import { NostrIdentitySection } from '@/components/NostrIdentitySection';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
@@ -191,6 +192,8 @@ export default function ProfileScreen() {
               )}
             </TouchableOpacity>
           </SectionCard>
+
+          <NostrIdentitySection />
 
           {/* ── Change Password ── */}
           <SectionCard title={t('changePassword')} icon="lock-closed-outline" color="#A855F7">

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Switch,
   Alert,
   Linking,
+  ScrollView,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useLocalSearchParams, type Href } from 'expo-router';
@@ -19,12 +20,23 @@ import { supabase } from '@/utils/supabase';
 import { getDefaultLightningWalletFromMetadata } from '@/utils/profileLightning';
 import { generateBookSynopsis } from '@/utils/gemini';
 import { loadKeys, sendEncryptedMessage } from '@/utils/nostr';
+import { hasSentOfferForBook, markOfferSentForBook } from '@/utils/bookOfferTracking';
+import { countUnreadIncomingFromPeer } from '@/utils/nostrDmReadCursor';
 import { buildOfferMessage, generateOfferId } from '@/utils/offerMessages';
+import * as nip19 from 'nostr-tools/nip19';
 import { fetchBitcoinRates, satsToUsd, satsToEur, type BtcRates } from '@/utils/currency';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardWrapper } from '@/components/KeyboardWrapper';
+import { parseStringArrayField, formatLanguageCode } from '@/utils/bookMetadata';
+import {
+  isListedForSale as bookIsListedForSale,
+  isSaleSold,
+  bookListingActivePayload,
+  bookListingCancelledPayload,
+} from '@/utils/bookListing';
 
 type BookData = {
+  user_id?: string | null;
   title: string;
   author: string;
   cover_url: string | null;
@@ -33,6 +45,13 @@ type BookData = {
   read_pages: number;
   translator: string | null;
   first_publish_year: number | null;
+  page_count?: number | null;
+  categories?: string[] | null;
+  average_rating?: number | null;
+  ratings_count?: number | null;
+  maturity_rating?: string | null;
+  language?: string | null;
+  subjects?: string[] | null;
   ia_synopsis: string | null;
   translated_titles: Array<{ lang: string; title: string; isOriginal?: boolean }> | null;
   is_for_sale: boolean | null;
@@ -42,6 +61,9 @@ type BookData = {
   lightning_address: string | null;
   sale_status?: 'not_for_sale' | 'for_sale' | 'sold' | null;
   is_purchased?: boolean | null;
+  purchased_from_id?: string | null;
+  purchased_from_display?: string | null;
+  is_app_purchase?: boolean | null;
 };
 
 type ConditionOption = 'new' | 'good' | 'worn';
@@ -84,6 +106,8 @@ export default function BookDetailScreen() {
   const [offerAmountSats, setOfferAmountSats] = useState('');
   const [offerSending, setOfferSending] = useState(false);
   const [rates, setRates] = useState<BtcRates | null>(null);
+  const [sellerUnreadCount, setSellerUnreadCount] = useState(0);
+  const [offerAlreadySent, setOfferAlreadySent] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -98,20 +122,28 @@ export default function BookDetailScreen() {
 
       const fetchBook = async () => {
         try {
-          const [bookRes, keysRes, userRes] = await Promise.all([
-            supabase.from('books').select('*').eq('id', id).single(),
-            loadKeys(),
-            supabase.auth.getUser(),
-          ]);
-          const { data, error } = bookRes;
+          const [keysRes, userRes] = await Promise.all([loadKeys(), supabase.auth.getUser()]);
           if (keysRes?.npub && isMounted) setMyNpub(keysRes.npub);
           if (userRes.data?.user?.id && isMounted) setMyUserId(userRes.data.user.id);
           if (!isMounted) return;
-          if (!error && data) {
-            const b = data as BookData;
+
+          const ownRes = await supabase.from('books').select('*').eq('id', id).maybeSingle();
+          let row = ownRes.data;
+          if (!row) {
+            const pubRes = await supabase
+              .from('books_market_public')
+              .select('*')
+              .eq('id', id)
+              .eq('sale_status', 'for_sale')
+              .maybeSingle();
+            row = pubRes.data ?? undefined;
+          }
+
+          if (!isMounted) return;
+          if (row) {
+            const b = row as BookData;
             setBook(b);
-            const listed =
-              b.sale_status === 'for_sale' || (b.is_for_sale ?? false);
+            const listed = bookIsListedForSale(b);
             setIsForSale(listed);
             setPriceSats(b.price_sats ? String(b.price_sats) : '');
             setCondition((b.condition as ConditionOption) ?? null);
@@ -126,6 +158,54 @@ export default function BookDetailScreen() {
       fetchBook();
       return () => { isMounted = false; };
     }, [id])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!id) return;
+      let cancel = false;
+      void (async () => {
+        const sent = await hasSentOfferForBook(id);
+        if (!cancel) setOfferAlreadySent(sent);
+      })();
+      return () => {
+        cancel = true;
+      };
+    }, [id])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancel = false;
+      void (async () => {
+        if (!book?.seller_npub || !myNpub || book.seller_npub === myNpub) {
+          if (!cancel) setSellerUnreadCount(0);
+          return;
+        }
+        const listed = !isSaleSold(book) && bookIsListedForSale(book);
+        if (!listed) {
+          if (!cancel) setSellerUnreadCount(0);
+          return;
+        }
+        const keys = await loadKeys();
+        if (!keys || cancel) return;
+        try {
+          const dec = nip19.decode(book.seller_npub);
+          if (dec.type !== 'npub') {
+            if (!cancel) setSellerUnreadCount(0);
+            return;
+          }
+          const sellerHex = dec.data as string;
+          const n = await countUnreadIncomingFromPeer(keys, sellerHex);
+          if (!cancel) setSellerUnreadCount(n);
+        } catch {
+          if (!cancel) setSellerUnreadCount(0);
+        }
+      })();
+      return () => {
+        cancel = true;
+      };
+    }, [book, myNpub])
   );
 
   const displayText = book ? getSynopsisForLanguage(book.ia_synopsis, i18n.language) : '';
@@ -145,8 +225,8 @@ export default function BookDetailScreen() {
     }
     if (!titles || !Array.isArray(titles)) return null;
     const original = titles.find((x) => x?.isOriginal && x?.title);
-    if (!original) return null;
-    return `(Orj: ${original.title})`;
+    if (!original?.title) return null;
+    return t('bookOriginalTitle', { title: original.title });
   })();
 
   const handleSaveListing = useCallback(async () => {
@@ -154,7 +234,8 @@ export default function BookDetailScreen() {
     setSavingListing(true);
     try {
       const keys = await loadKeys();
-      const saleStatus = isForSale ? 'for_sale' : 'not_for_sale';
+      const listingCore = isForSale ? bookListingActivePayload : bookListingCancelledPayload;
+      const saleStatus = listingCore.sale_status;
 
       let lightningAddressUpdate: string | null | undefined;
       if (isForSale && !book?.lightning_address?.trim()) {
@@ -164,8 +245,7 @@ export default function BookDetailScreen() {
       }
 
       const updatePayload: Record<string, unknown> = {
-        is_for_sale: isForSale,
-        sale_status: saleStatus,
+        ...listingCore,
         price_sats: isForSale && priceSats.trim() ? parseInt(priceSats, 10) : null,
         condition: isForSale ? condition : null,
         seller_npub: keys?.npub ?? null,
@@ -204,7 +284,7 @@ export default function BookDetailScreen() {
     npub.length <= 28 ? npub : `${npub.slice(0, 12)}...${npub.slice(-12)}`;
 
   // isMyBook: kitap bana ait mi? seller_npub veya user_id ile kontrol edilir.
-  const bookData = book as (BookData & { user_id?: string }) | null;
+  const bookData = book as BookData | null;
   const isMyBook =
     !bookData?.seller_npub ||
     (!!myNpub && bookData.seller_npub === myNpub) ||
@@ -213,9 +293,7 @@ export default function BookDetailScreen() {
   const isOwnBook = isMyBook;
 
   const isListedForSale =
-    !!book &&
-    book.sale_status !== 'sold' &&
-    (book.sale_status === 'for_sale' || (book.is_for_sale ?? false));
+    !!book && !isSaleSold(book) && bookIsListedForSale(book);
 
   const showMessageSeller =
     isListedForSale &&
@@ -246,7 +324,7 @@ export default function BookDetailScreen() {
     }
     const keys = await loadKeys();
     if (!keys) {
-      Alert.alert(t('error'), 'Nostr kimliği bulunamadı.');
+      Alert.alert(t('error'), t('nostrIdentityMissing'));
       return;
     }
     setOfferSending(true);
@@ -262,6 +340,8 @@ export default function BookDetailScreen() {
         buyerNpub: keys.npub,
       });
       await sendEncryptedMessage(book.seller_npub, payload);
+      await markOfferSentForBook(id);
+      setOfferAlreadySent(true);
       setOfferModalVisible(false);
       setOfferAmountSats('');
       router.push(`/messages/${encodeURIComponent(book.seller_npub)}` as Href);
@@ -502,9 +582,9 @@ export default function BookDetailScreen() {
             {t('back')}
           </Text>
         </TouchableOpacity>
-        {id ? (
+        {isMyBook && id ? (
           <TouchableOpacity
-            onPress={() => router.push({ pathname: '/edit-book', params: { id } })}
+            onPress={() => router.push(`/book/edit/${id}` as Href)}
             className="flex-row items-center rounded-xl py-2 px-4 gap-2"
             style={{
               backgroundColor: 'rgba(0, 229, 255, 0.12)',
@@ -563,77 +643,38 @@ export default function BookDetailScreen() {
                   <Text
                     className="text-[#00FF9D] text-[10px] tracking-widest"
                     style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                    {t('forSale')} · {book.price_sats ? `${book.price_sats.toLocaleString()} sats` : '—'}
+                    {t('forSale')} ·{' '}
+                    {(() => {
+                      const ps = book.price_sats;
+                      const n = ps == null ? NaN : Number(ps);
+                      return Number.isFinite(n) ? `${n.toLocaleString()} sats` : '—';
+                    })()}
                   </Text>
                 </View>
-                {book.price_sats && rates && (
-                  <View className="mt-1 ml-1">
-                    <Text
-                      className="text-[#8892B0] text-[10px]"
-                      style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-                      ≈ ${satsToUsd(book.price_sats, rates)?.toFixed(2)} · €{satsToEur(book.price_sats, rates)?.toFixed(2)}
-                    </Text>
-                  </View>
-                )}
-                <View className="flex-row flex-wrap gap-2 mt-3">
-                  {showMessageSeller && (
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() =>
-                        router.push(`/messages/${encodeURIComponent(book.seller_npub!)}` as Href)
-                      }
-                      className="flex-row items-center gap-2 rounded-xl py-2.5 px-4"
-                      style={{
-                        backgroundColor: 'rgba(168, 85, 247, 0.15)',
-                        borderWidth: 1,
-                        borderColor: '#A855F7',
-                      }}>
-                      <Ionicons name="chatbubble-ellipses-outline" size={18} color="#E879F9" />
+                {(() => {
+                  const ps = book.price_sats;
+                  const n = ps == null ? NaN : Number(ps);
+                  if (!Number.isFinite(n) || !rates) return null;
+                  const usd = satsToUsd(n, rates);
+                  const eur = satsToEur(n, rates);
+                  if (
+                    usd == null ||
+                    eur == null ||
+                    !Number.isFinite(usd) ||
+                    !Number.isFinite(eur)
+                  ) {
+                    return null;
+                  }
+                  return (
+                    <View className="mt-1 ml-1">
                       <Text
-                        className="text-sm tracking-widest"
-                        style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#E879F9' }}>
-                        {t('messageSeller')}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  {showSendOffer && (
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => {
-                        setOfferAmountSats(book.price_sats ? String(book.price_sats) : '');
-                        setOfferModalVisible(true);
-                      }}
-                      className="flex-row items-center gap-2 rounded-xl py-2.5 px-4"
-                      style={{
-                        backgroundColor: 'rgba(0, 229, 255, 0.15)',
-                        borderWidth: 1,
-                        borderColor: '#00E5FF',
-                      }}>
-                      <Ionicons name="pricetag-outline" size={18} color="#00E5FF" />
-                      <Text
-                        className="text-sm tracking-widest"
-                        style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#00E5FF' }}>
-                        {t('p2pSendOffer')}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  {showDisabledOffer && (
-                    <View
-                      className="flex-row items-center gap-2 rounded-xl py-2.5 px-4 opacity-50"
-                      style={{
-                        backgroundColor: 'rgba(136, 146, 176, 0.1)',
-                        borderWidth: 1,
-                        borderColor: '#8892B0',
-                      }}>
-                      <Ionicons name="wallet-outline" size={16} color="#8892B0" />
-                      <Text
-                        className="text-sm tracking-widest"
-                        style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#8892B0' }}>
-                        {t('noWalletAdded')}
+                        className="text-[#8892B0] text-[10px]"
+                        style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                        ≈ ${usd.toFixed(2)} · €{eur.toFixed(2)}
                       </Text>
                     </View>
-                  )}
-                </View>
+                  );
+                })()}
               </View>
             )}
             <Text
@@ -660,27 +701,18 @@ export default function BookDetailScreen() {
               </Text>
             ) : null}
             <View className="flex-row flex-wrap gap-x-4 gap-y-1 mt-1">
-              {book.total_pages > 0 && (
-                <Text
-                  className="text-[#6B7280] text-[10px]"
-                  style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-                  {t('totalPages')}: {book.total_pages.toLocaleString()}
-                </Text>
-              )}
-              {book.isbn ? (
-                <Text
-                  className="text-[#6B7280] text-[10px]"
-                  style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-                  ISBN: {book.isbn}
-                </Text>
-              ) : null}
-              {book.first_publish_year ? (
-                <Text
-                  className="text-[#6B7280] text-[10px]"
-                  style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-                  {t('firstPublishYear')}: {book.first_publish_year}
-                </Text>
-              ) : null}
+              {(() => {
+                const tp = book.total_pages;
+                const tpn = tp == null ? NaN : Number(tp);
+                if (!Number.isFinite(tpn) || tpn <= 0) return null;
+                return (
+                  <Text
+                    className="text-[#6B7280] text-[10px]"
+                    style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                    {t('totalPages')}: {Math.round(tpn).toLocaleString()}
+                  </Text>
+                );
+              })()}
               {book.translator ? (
                 <Text
                   className="text-[#6B7280] text-[10px]"
@@ -693,44 +725,310 @@ export default function BookDetailScreen() {
           </View>
         </View>
 
-        {/* ── Middle: Progress ── */}
-        <View
-          className="rounded-2xl p-4 mb-6"
-          style={{
-            backgroundColor: '#131B2B',
-            borderWidth: 1,
-            borderColor: 'rgba(0, 229, 255, 0.15)',
-          }}>
-          <View className="flex-row justify-between items-center mb-2">
-            <Text
-              className="text-[#8892B0] text-[10px] tracking-widest"
-              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              {t('leido')}
-            </Text>
-            <Text
-              className="text-[#00E5FF] text-sm"
-              style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              {progressPercent}%
-            </Text>
+        {isListedForSale &&
+        (showMessageSeller ||
+          (showSendOffer && offerAlreadySent) ||
+          (showSendOffer && !offerAlreadySent) ||
+          showDisabledOffer) ? (
+          <View className="flex-row gap-2 mb-3" style={{ alignSelf: 'stretch', width: '100%' }}>
+            {showMessageSeller ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() =>
+                  router.push(`/messages/${encodeURIComponent(book.seller_npub!)}` as Href)
+                }
+                className="flex-1 min-w-0 flex-row items-center justify-center gap-2 rounded-xl py-3 px-2"
+                style={{
+                  position: 'relative',
+                  backgroundColor: 'rgba(168, 85, 247, 0.15)',
+                  borderWidth: 1,
+                  borderColor: '#A855F7',
+                }}>
+                <Ionicons name="chatbubble-ellipses-outline" size={18} color="#E879F9" />
+                <Text
+                  className="text-xs tracking-widest text-center flex-shrink"
+                  style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#E879F9' }}
+                  numberOfLines={2}>
+                  {t('messageSeller')}
+                </Text>
+                {sellerUnreadCount > 0 ? (
+                  <View
+                    className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full items-center justify-center"
+                    style={{
+                      backgroundColor: '#EF4444',
+                      borderWidth: 1,
+                      borderColor: '#0A0F1A',
+                      position: 'absolute',
+                    }}>
+                    <Text
+                      style={{
+                        fontFamily: 'SpaceGrotesk_700Bold',
+                        fontSize: 10,
+                        color: '#fff',
+                      }}>
+                      {sellerUnreadCount > 9 ? '9+' : String(sellerUnreadCount)}
+                    </Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            ) : null}
+            {showSendOffer && offerAlreadySent ? (
+              <View
+                className="flex-1 min-w-0 flex-row items-center justify-center gap-2 rounded-xl py-3 px-2"
+                style={{
+                  backgroundColor: 'rgba(0, 229, 255, 0.08)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(0, 229, 255, 0.35)',
+                }}>
+                <Ionicons name="checkmark-circle" size={20} color="#00E5FF" />
+                <Text
+                  className="text-xs tracking-widest text-center flex-shrink"
+                  style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#00E5FF' }}
+                  numberOfLines={2}>
+                  {t('offerSent')}
+                </Text>
+              </View>
+            ) : null}
+            {showSendOffer && !offerAlreadySent ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  setOfferAmountSats(book.price_sats ? String(book.price_sats) : '');
+                  setOfferModalVisible(true);
+                }}
+                className="flex-1 min-w-0 flex-row items-center justify-center gap-2 rounded-xl py-3 px-2"
+                style={{
+                  backgroundColor: 'rgba(0, 229, 255, 0.15)',
+                  borderWidth: 1,
+                  borderColor: '#00E5FF',
+                }}>
+                <Ionicons name="pricetag-outline" size={18} color="#00E5FF" />
+                <Text
+                  className="text-xs tracking-widest text-center flex-shrink"
+                  style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#00E5FF' }}
+                  numberOfLines={2}>
+                  {t('p2pSendOffer')}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            {showDisabledOffer ? (
+              <View
+                className="flex-1 min-w-0 flex-row items-center justify-center gap-2 rounded-xl py-3 px-2 opacity-50"
+                style={{
+                  backgroundColor: 'rgba(136, 146, 176, 0.1)',
+                  borderWidth: 1,
+                  borderColor: '#8892B0',
+                }}>
+                <Ionicons name="wallet-outline" size={16} color="#8892B0" />
+                <Text
+                  className="text-xs tracking-widest text-center flex-shrink"
+                  style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#8892B0' }}
+                  numberOfLines={2}>
+                  {t('noWalletAdded')}
+                </Text>
+              </View>
+            ) : null}
           </View>
+        ) : null}
+
+        {book.is_app_purchase &&
+        (book.purchased_from_display?.trim() || book.purchased_from_id) ? (
           <View
-            className="w-full rounded-full overflow-hidden mb-2"
-            style={{ height: 6, backgroundColor: '#0A0F1A' }}>
-            <View
-              className="rounded-full"
-              style={{
-                height: 6,
-                width: `${progressPercent}%`,
-                backgroundColor: '#00E5FF',
-              }}
-            />
+            className="rounded-2xl px-4 py-3 mb-3 flex-row items-center gap-2"
+            style={{
+              backgroundColor: 'rgba(168, 85, 247, 0.1)',
+              borderWidth: 1,
+              borderColor: 'rgba(196, 181, 253, 0.45)',
+            }}>
+            <Ionicons name="person-circle-outline" size={20} color="#C4B5FD" />
+            <Text
+              className="text-[#E9D5FF] text-xs flex-1 leading-5"
+              style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
+              {t('previousOwnerBadge', {
+                name:
+                  book.purchased_from_display?.trim() ||
+                  book.purchased_from_id ||
+                  '—',
+              })}
+            </Text>
           </View>
-          <Text
-            className="text-[#8892B0] text-[10px]"
-            style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-            {readPages.toLocaleString()} / {totalPages.toLocaleString()} {t('pagesRead')}
-          </Text>
-        </View>
+        ) : null}
+
+        {/* ── Metadata strip (Google / Open Library) ── */}
+        {(() => {
+          const pc = book.page_count;
+          const pcn = pc == null ? NaN : Number(pc);
+          const tp = book.total_pages;
+          const tpn = tp == null ? NaN : Number(tp);
+          const metaPages =
+            Number.isFinite(pcn) && pcn > 0
+              ? Math.round(pcn)
+              : Number.isFinite(tpn) && tpn > 0
+                ? Math.round(tpn)
+                : null;
+          const arn =
+            book.average_rating == null ? NaN : Number(book.average_rating);
+          const hasRating = Number.isFinite(arn) && arn > 0;
+          const lang = book.language?.trim()
+            ? formatLanguageCode(book.language)
+            : null;
+          const yearRaw = book.first_publish_year;
+          const year =
+            yearRaw != null && Number.isFinite(Number(yearRaw))
+              ? Number(yearRaw)
+              : null;
+          if (!hasRating && metaPages == null && !lang && year == null) return null;
+          const chip = (key: string, body: ReactNode) => (
+            <View
+              key={key}
+              className="rounded-2xl px-4 py-3 mr-3"
+              style={{
+                backgroundColor: 'rgba(0, 229, 255, 0.06)',
+                borderWidth: 1,
+                borderColor: 'rgba(0, 229, 255, 0.28)',
+                minWidth: 112,
+              }}>
+              {body}
+            </View>
+          );
+          return (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              className="mb-2 -mx-1"
+              contentContainerStyle={{
+                paddingHorizontal: 4,
+                paddingVertical: 10,
+                alignItems: 'stretch',
+              }}>
+              {hasRating
+                ? chip(
+                    'rating',
+                    <>
+                      <Text
+                        className="text-[#FACC15] text-lg mb-0.5"
+                        style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                        ⭐️ {arn.toFixed(1)}
+                        <Text
+                          className="text-[#8892B0] text-[10px]"
+                          style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                          {' '}
+                          / 5
+                        </Text>
+                      </Text>
+                      {(() => {
+                        const rc = book.ratings_count;
+                        const rcn = rc == null ? NaN : Number(rc);
+                        if (!Number.isFinite(rcn) || rcn <= 0) return null;
+                        return (
+                          <Text
+                            className="text-[#6B7280] text-[9px] tracking-widest"
+                            style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                            {Math.round(rcn).toLocaleString()} {t('reviews')}
+                          </Text>
+                        );
+                      })()}
+                    </>
+                  )
+                : null}
+              {metaPages != null
+                ? chip(
+                    'pages',
+                    <>
+                      <Text style={{ fontSize: 14, marginBottom: 2 }}>📄</Text>
+                      <Text
+                        className="text-[#00E5FF] text-sm"
+                        style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                        {metaPages.toLocaleString()}
+                      </Text>
+                      <Text
+                        className="text-[#6B7280] text-[9px] tracking-widest mt-0.5"
+                        style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                        {t('bookMetaPagesShort')}
+                      </Text>
+                    </>
+                  )
+                : null}
+              {lang
+                ? chip(
+                    'lang',
+                    <>
+                      <Text style={{ fontSize: 14, marginBottom: 2 }}>🌐</Text>
+                      <Text
+                        className="text-[#E879F9] text-base tracking-widest"
+                        style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                        {lang}
+                      </Text>
+                      <Text
+                        className="text-[#6B7280] text-[9px] tracking-widest mt-0.5"
+                        style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                        {t('bookMetaLanguage')}
+                      </Text>
+                    </>
+                  )
+                : null}
+              {year != null
+                ? chip(
+                    'year',
+                    <>
+                      <Text style={{ fontSize: 14, marginBottom: 2 }}>📅</Text>
+                      <Text
+                        className="text-[#00FF9D] text-base"
+                        style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                        {year}
+                      </Text>
+                      <Text
+                        className="text-[#6B7280] text-[9px] tracking-widest mt-0.5"
+                        style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                        {t('firstPublishYear')}
+                      </Text>
+                    </>
+                  )
+                : null}
+            </ScrollView>
+          );
+        })()}
+
+        {/* ── Middle: Progress (owner only) ── */}
+        {isMyBook ? (
+          <View
+            className="rounded-2xl p-4 mb-6"
+            style={{
+              backgroundColor: '#131B2B',
+              borderWidth: 1,
+              borderColor: 'rgba(0, 229, 255, 0.15)',
+            }}>
+            <View className="flex-row justify-between items-center mb-2">
+              <Text
+                className="text-[#8892B0] text-[10px] tracking-widest"
+                style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                {t('leido')}
+              </Text>
+              <Text
+                className="text-[#00E5FF] text-sm"
+                style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                {progressPercent}%
+              </Text>
+            </View>
+            <View
+              className="w-full rounded-full overflow-hidden mb-2"
+              style={{ height: 6, backgroundColor: '#0A0F1A' }}>
+              <View
+                className="rounded-full"
+                style={{
+                  height: 6,
+                  width: `${progressPercent}%`,
+                  backgroundColor: '#00E5FF',
+                }}
+              />
+            </View>
+            <Text
+              className="text-[#8892B0] text-[10px]"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {readPages.toLocaleString()} / {totalPages.toLocaleString()} {t('pagesRead')}
+            </Text>
+          </View>
+        ) : null}
 
         {/* ── Bottom: IA Synopsis ── */}
         <View
@@ -744,7 +1042,7 @@ export default function BookDetailScreen() {
             <Text
               className="text-[#8892B0] text-[10px] tracking-widest"
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              IA SYNC
+              {t('iaSyncSectionTitle')}
             </Text>
             {isMyBook && (
               <TouchableOpacity
@@ -766,6 +1064,71 @@ export default function BookDetailScreen() {
             style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
             {displayText || t('iaSyncPending')}
           </Text>
+
+          {(() => {
+            const cats = parseStringArrayField(book.categories);
+            const subs = parseStringArrayField(book.subjects);
+            const seen = new Set<string>();
+            const pills: { label: string; kind: 'cat' | 'sub' }[] = [];
+            for (const c of cats) {
+              const k = c.toLowerCase();
+              if (seen.has(k)) continue;
+              seen.add(k);
+              pills.push({ label: c, kind: 'cat' });
+            }
+            for (const s of subs) {
+              const k = s.toLowerCase();
+              if (seen.has(k)) continue;
+              seen.add(k);
+              pills.push({ label: s, kind: 'sub' });
+            }
+            if (!pills.length) return null;
+            return (
+              <View className="mt-5 pt-4 border-t border-white/10">
+                <Text
+                  className="text-[#8892B0] text-[10px] tracking-[0.2em] mb-3"
+                  style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                  {t('bookCategoriesAndTags')}
+                </Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {pills.map((p, i) => (
+                    <View
+                      key={`${p.kind}-${i}-${p.label}`}
+                      className="px-3 py-1.5 rounded-full"
+                      style={{
+                        backgroundColor:
+                          p.kind === 'cat'
+                            ? 'rgba(0, 229, 255, 0.1)'
+                            : 'rgba(168, 85, 247, 0.12)',
+                        borderWidth: 1,
+                        borderColor:
+                          p.kind === 'cat'
+                            ? 'rgba(0, 229, 255, 0.35)'
+                            : 'rgba(168, 85, 247, 0.4)',
+                      }}>
+                      <Text
+                        className="text-[11px]"
+                        style={{
+                          fontFamily: 'SpaceGrotesk_500Medium',
+                          color: p.kind === 'cat' ? '#67E8F9' : '#E9D5FF',
+                        }}
+                        numberOfLines={2}>
+                        {p.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            );
+          })()}
+
+          {book.isbn?.trim() ? (
+            <Text
+              className="text-[#4A5568] text-[10px] mt-4 tracking-wide"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('isbn')}: {book.isbn}
+            </Text>
+          ) : null}
         </View>
 
         {/* ── Read-only badge for others' books ── */}
@@ -781,13 +1144,13 @@ export default function BookDetailScreen() {
             <Text
               className="text-[10px] tracking-widest flex-1"
               style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#A78BFA' }}>
-              READ-ONLY · Bu kitap başka bir kullanıcıya ait
+              {t('bookReadOnlyBadge')} · {t('bookReadOnlyHint')}
             </Text>
           </View>
         )}
 
         {/* ── P2P Market Settings ── */}
-        {isOwnBook && book?.sale_status !== 'sold' && <View className="mb-6">
+        {isOwnBook && book && !isSaleSold(book) && <View className="mb-6">
           {/* Cyberpunk divider */}
           <View className="flex-row items-center gap-3 mb-5">
             <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(0, 255, 157, 0.25)' }} />
@@ -814,7 +1177,7 @@ export default function BookDetailScreen() {
                   {t('sellBook')}
                 </Text>
                 <Text className="text-[#6B7280] text-[10px] mt-0.5" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-                  Bitcoin · Sats
+                  {t('bitcoinSatsSubtitle')}
                 </Text>
               </View>
               <Switch
@@ -923,7 +1286,7 @@ export default function BookDetailScreen() {
               <Text
                 className="text-[#FF9900] text-[10px] tracking-widest"
                 style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                AMAZON
+                {t('amazonAffiliateSection')}
               </Text>
             </View>
             <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255, 153, 0, 0.25)' }} />

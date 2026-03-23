@@ -166,11 +166,12 @@ export default function LoginScreen() {
           return;
         }
         setCachedAccountPassword(password);
+        Alert.alert(t('success'), t('signUpSuccess'));
+        navigateIn();
       } else {
         setCachedAccountPassword(null);
+        Alert.alert(t('success'), t('signUpSuccess'));
       }
-      Alert.alert(t('success'), t('signUpSuccess'));
-      navigateIn();
     } catch (err: any) {
       console.error(err);
       Alert.alert(t('error'), err.message ?? String(err));

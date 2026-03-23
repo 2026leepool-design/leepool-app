@@ -16,7 +16,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
 import { generateBookSynopsis } from '@/utils/gemini';
-
+import { BookCardMetaChips } from '@/components/BookCard';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Book = {
@@ -27,11 +27,14 @@ type Book = {
   read_pages: number;
   current_value: number;
   ia_synopsis: string | null;
-  status: string;
+  status?: string;
+  sale_status?: string | null;
   cover_url: string | null;
   isbn: string | null;
   translated_titles: Array<{ lang: string; title: string; isOriginal?: boolean }> | null;
   created_at?: string;
+  page_count?: number | null;
+  average_rating?: number | null;
 };
 
 type FilterMode = 'all' | 'read';
@@ -142,7 +145,7 @@ function BookCard({
                 className="text-[#00E5FF] text-base leading-tight"
                 style={{ fontFamily: 'SpaceGrotesk_700Bold' }}
                 numberOfLines={2}>
-                {book.title}
+                {book.title ?? '—'}
               </Text>
             </TouchableOpacity>
             {(() => {
@@ -169,8 +172,13 @@ function BookCard({
             <Text
               className="text-[#8892B0] text-[10px] tracking-widest mt-1"
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              {book.author.toUpperCase()}
+              {String(book.author ?? '').toUpperCase()}
             </Text>
+            <BookCardMetaChips
+              page_count={book.page_count}
+              total_pages={book.total_pages}
+              average_rating={book.average_rating}
+            />
           </View>
 
           {/* Action Buttons */}
@@ -327,11 +335,20 @@ export default function LibraryScreen() {
       async function loadBooks() {
         setLoading(true);
         try {
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          const uid = authUser?.id;
+          if (!uid) {
+            if (!isMounted) return;
+            setBooks([]);
+            return;
+          }
           const { data, error } = await supabase
             .from('books')
             .select(
-              'id, title, author, total_pages, read_pages, current_value, ia_synopsis, status, cover_url, isbn, translated_titles, created_at'
+              'id, title, author, total_pages, read_pages, current_value, ia_synopsis, status, sale_status, cover_url, isbn, translated_titles, created_at, page_count, average_rating'
             )
+            .eq('user_id', uid)
+            .eq('sale_status', 'not_for_sale')
             .order('created_at', { ascending: false });
 
           if (error) throw error;
@@ -356,7 +373,11 @@ export default function LibraryScreen() {
     let list = [...books];
 
     if (filterMode === 'read') {
-      list = list.filter((b) => b.status === 'read');
+      list = list.filter(
+        (b) =>
+          b.status === 'read' ||
+          ((b.read_pages ?? 0) >= (b.total_pages ?? 1) && (b.total_pages ?? 0) > 0)
+      );
     }
 
     if (sortMode === 'progress') {
@@ -382,7 +403,7 @@ export default function LibraryScreen() {
 
   const handleEdit = useCallback(
     (book: Book) => {
-      router.push({ pathname: '/edit-book', params: { id: book.id } });
+      router.push(`/book/edit/${book.id}` as Href);
     },
     [router]
   );

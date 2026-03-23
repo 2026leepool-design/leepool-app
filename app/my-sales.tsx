@@ -50,9 +50,16 @@ function MarketCard({
   t: (key: string) => string;
   onPress: () => void;
 }) {
-  const condLabel = book.condition
-    ? t(`condition${book.condition.charAt(0).toUpperCase() + book.condition.slice(1)}` as 'conditionNew' | 'conditionGood' | 'conditionWorn')
-    : null;
+  const cond = book.condition;
+  const condLabel =
+    typeof cond === 'string' && cond.length > 0
+      ? t(
+          `condition${cond.charAt(0).toUpperCase() + cond.slice(1)}` as
+            | 'conditionNew'
+            | 'conditionGood'
+            | 'conditionWorn'
+        )
+      : null;
 
   return (
     <TouchableOpacity
@@ -84,12 +91,12 @@ function MarketCard({
             className="text-white text-base leading-tight mb-1"
             style={{ fontFamily: 'SpaceGrotesk_700Bold' }}
             numberOfLines={2}>
-            {book.title}
+            {book.title ?? '—'}
           </Text>
           <Text
             className="text-[#8892B0] text-[10px] tracking-widest"
             style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-            {book.author.toUpperCase()}
+            {String(book.author ?? '').toUpperCase()}
           </Text>
           {book.first_publish_year ? (
             <Text
@@ -119,7 +126,11 @@ function MarketCard({
             <Text
               className="text-xl"
               style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#00FF9D' }}>
-              {book.price_sats?.toLocaleString() ?? '—'}
+              {(() => {
+                const ps = book.price_sats;
+                const n = ps == null ? NaN : Number(ps);
+                return Number.isFinite(n) ? n.toLocaleString() : '—';
+              })()}
             </Text>
             <Text
               className="text-[#6B7280] text-[10px] self-end mb-1"
@@ -157,8 +168,7 @@ export default function MySalesScreen() {
           const { data, error } = await supabase
             .from('books')
             .select('id, title, author, cover_url, price_sats, condition, isbn, translator, first_publish_year, created_at, seller_npub, sale_status, is_for_sale')
-            .or('sale_status.eq.for_sale,is_for_sale.eq.true')
-            .neq('sale_status', 'sold')
+            .eq('sale_status', 'for_sale')
             .eq('seller_npub', keys.npub)
             .order('created_at', { ascending: false });
 

@@ -12,14 +12,18 @@ import {
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
 import { Stack } from 'expo-router';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { View } from 'react-native';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import ReleaseNotesGate from '@/components/ReleaseNotesGate';
 
 SplashScreen.preventAutoHideAsync();
+
+const KEEP_AWAKE_BOOTSTRAP_TAG = 'leepool-font-bootstrap';
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -33,6 +37,24 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    if (!fontsLoaded && !fontError) {
+      void (async () => {
+        try {
+          await activateKeepAwakeAsync(KEEP_AWAKE_BOOTSTRAP_TAG);
+        } catch {
+          console.warn('Keep awake not supported');
+        }
+      })();
+    }
+  }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      void deactivateKeepAwake(KEEP_AWAKE_BOOTSTRAP_TAG).catch(() => {});
     }
   }, [fontsLoaded, fontError]);
 
@@ -56,10 +78,7 @@ export default function RootLayout() {
           name="add-book"
           options={{ presentation: 'modal', headerShown: false }}
         />
-        <Stack.Screen
-          name="edit-book"
-          options={{ presentation: 'modal', headerShown: false }}
-        />
+        <Stack.Screen name="book" />
         <Stack.Screen
           name="synopsis"
           options={{ presentation: 'modal', headerShown: false }}
@@ -75,6 +94,7 @@ export default function RootLayout() {
           options={{ presentation: 'modal', headerShown: true }}
         />
       </Stack>
+      <ReleaseNotesGate />
       <StatusBar style="light" />
     </View>
     </GestureHandlerRootView>

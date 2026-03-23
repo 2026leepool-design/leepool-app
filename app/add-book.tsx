@@ -17,7 +17,13 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '@/utils/supabase';
 import { getDefaultLightningWalletFromMetadata } from '@/utils/profileLightning';
-import { fetchSmartBookData, searchBooksMulti, type SmartBookData } from '@/utils/bookApi';
+import {
+  fetchSmartBookData,
+  searchBooksMulti,
+  sortSearchResultsByScreenAuthor,
+  type SmartBookData,
+} from '@/utils/bookApi';
+import { arrayToCommaSeparated, commaSeparatedToArray } from '@/utils/bookMetadata';
 import { analyzeBookCover } from '@/utils/gemini';
 import {
   pickCoverFromCamera,
@@ -51,6 +57,13 @@ export default function AddBookScreen() {
   const [currentValue, setCurrentValue] = useState('');
   const [lightningAddress, setLightningAddress] = useState('');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [language, setLanguage] = useState('');
+  const [categoriesCsv, setCategoriesCsv] = useState('');
+  const [pageCountMeta, setPageCountMeta] = useState('');
+  /** Serbest metin; kayıtta parseFloat → average_rating (sayı veya null) */
+  const [averageRatingInput, setAverageRatingInput] = useState('');
+  const [ratingsCount, setRatingsCount] = useState<number | null>(null);
+  const [maturityRating, setMaturityRating] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [focusField, setFocusField] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -63,6 +76,8 @@ export default function AddBookScreen() {
   const [isSearchResultModalVisible, setIsSearchResultModalVisible] = useState(false);
   const scanProcessed = useRef(false);
   const paramsApplied = useRef(false);
+
+  const digitsOnly = useCallback((text: string) => text.replace(/[^0-9]/g, ''), []);
 
   useEffect(() => {
     if (paramsApplied.current) return;
@@ -80,6 +95,37 @@ export default function AddBookScreen() {
     if (result.totalPages && result.totalPages > 0) { setTotalPages(String(result.totalPages)); updates.pages = true; }
     if (result.isbn) { setIsbn(result.isbn); updates.isbn = true; }
     if (result.first_publish_year) { setFirstPublishYear(String(result.first_publish_year)); updates.firstPublishYear = true; }
+    if (result.page_count != null && result.page_count > 0) {
+      setPageCountMeta(String(result.page_count));
+      updates.pageCountMeta = true;
+    }
+    if (result.language?.trim()) {
+      setLanguage(result.language.trim());
+      updates.language = true;
+    }
+    if (result.categories?.length) {
+      setCategoriesCsv(arrayToCommaSeparated(result.categories));
+      updates.categoriesCsv = true;
+    }
+    if (result.subjects?.length) {
+      setCategoriesCsv((prev) => {
+        const merged = [...new Set([...commaSeparatedToArray(prev), ...result.subjects!])];
+        return arrayToCommaSeparated(merged);
+      });
+      updates.categoriesCsv = true;
+    }
+    if (result.average_rating != null && Number(result.average_rating) > 0) {
+      setAverageRatingInput(String(Number(result.average_rating)));
+      updates.averageRating = true;
+    }
+    if (result.ratings_count != null && result.ratings_count > 0) {
+      setRatingsCount(Math.round(Number(result.ratings_count)));
+      updates.ratingsCount = true;
+    }
+    if (result.maturity_rating?.trim()) {
+      setMaturityRating(result.maturity_rating.trim());
+      updates.maturityRating = true;
+    }
     if (result.translator) { setTranslator(result.translator); updates.translator = true; }
     if (result.cover_url) { setCoverUrl(result.cover_url); updates.coverUrl = true; }
     if (result.original_title) {
@@ -183,7 +229,8 @@ export default function AddBookScreen() {
     }
     setSearchingWeb(true);
     try {
-      const results = await searchBooksMulti(isbn.trim(), title.trim(), author.trim());
+      const raw = await searchBooksMulti(isbn.trim(), title.trim(), author.trim());
+      const results = sortSearchResultsByScreenAuthor(raw, author);
       if (results.length > 0) {
         setSearchResults(results);
         setIsSearchResultModalVisible(true);
@@ -205,7 +252,8 @@ export default function AddBookScreen() {
     }
     setFieldSearchBusy('title');
     try {
-      const results = await searchBooksMulti('', hint, '');
+      const raw = await searchBooksMulti('', hint, '');
+      const results = sortSearchResultsByScreenAuthor(raw, author);
       if (results.length > 0) {
         setSearchResults(results);
         setIsSearchResultModalVisible(true);
@@ -217,7 +265,7 @@ export default function AddBookScreen() {
     } finally {
       setFieldSearchBusy(null);
     }
-  }, [title, t]);
+  }, [title, author, t]);
 
   const handleSearchFromAuthorField = useCallback(async () => {
     const hint = author.trim();
@@ -283,6 +331,14 @@ export default function AddBookScreen() {
       const lnFromForm = lightningAddress.trim();
       const lnResolved =
         lnFromForm || getDefaultLightningWalletFromMetadata(user) || null;
+      const pcmRaw = pageCountMeta.trim() ? parseInt(pageCountMeta, 10) : NaN;
+      const page_count =
+        !isNaN(pcmRaw) && pcmRaw > 0 ? pcmRaw : pages;
+      const avgStr = averageRatingInput.trim().replace(',', '.');
+      const avgParsed = avgStr ? parseFloat(avgStr) : NaN;
+      const average_rating =
+        Number.isFinite(avgParsed) && avgParsed > 0 ? avgParsed : null;
+      const cats = commaSeparatedToArray(categoriesCsv);
       const { error } = await supabase.from('books').insert([
         {
           title: title.trim(),
@@ -295,9 +351,19 @@ export default function AddBookScreen() {
           current_value: parseFloat(currentValue) || 0,
           read_pages: 0,
           status: 'bought',
+          sale_status: 'not_for_sale',
+          is_for_sale: false,
+          is_app_purchase: false,
           cover_url: coverUrl || null,
           lightning_address: lnResolved,
           user_id: user?.id ?? null,
+          page_count,
+          categories: cats.length ? cats : null,
+          subjects: null,
+          average_rating,
+          ratings_count: ratingsCount,
+          maturity_rating: maturityRating?.trim() || null,
+          language: language.trim() || null,
         },
       ]);
 
@@ -309,7 +375,26 @@ export default function AddBookScreen() {
     } finally {
       setLoading(false);
     }
-  }, [title, author, totalPages, isbn, firstPublishYear, translator, translatedTitles, currentValue, lightningAddress, coverUrl, t, router]);
+  }, [
+    title,
+    author,
+    totalPages,
+    isbn,
+    firstPublishYear,
+    pageCountMeta,
+    language,
+    categoriesCsv,
+    averageRatingInput,
+    ratingsCount,
+    maturityRating,
+    translator,
+    translatedTitles,
+    currentValue,
+    lightningAddress,
+    coverUrl,
+    t,
+    router,
+  ]);
 
   const inputStyle = (field: string) => {
     const isApiUpdated = apiUpdatedFields[field];
@@ -623,6 +708,65 @@ export default function AddBookScreen() {
               keyboardType="numeric"
             />
           </View>
+        </View>
+
+        {/* Page count (metadata) + average rating */}
+        <View className="flex-row gap-3 mb-5">
+          <View className="flex-1">
+            <Text
+              className="text-[#8892B0] text-xs mb-2 tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('metadataPageCount')}
+            </Text>
+            <TextInput
+              className="rounded-xl px-4 py-4 text-white text-base"
+              style={inputStyle('pageCountMeta')}
+              placeholderTextColor="#4A5568"
+              value={pageCountMeta}
+              onChangeText={(txt) => setPageCountMeta(digitsOnly(txt))}
+              onFocus={() => setFocusField('pageCountMeta')}
+              onBlur={() => setFocusField(null)}
+              keyboardType="numeric"
+            />
+          </View>
+          <View className="flex-1">
+            <Text
+              className="text-[#8892B0] text-xs mb-2 tracking-widest"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('averageRatingLabel')}
+            </Text>
+            <TextInput
+              className="rounded-xl px-4 py-4 text-white text-base"
+              style={inputStyle('averageRating')}
+              placeholderTextColor="#4A5568"
+              placeholder="4.5"
+              value={averageRatingInput}
+              onChangeText={setAverageRatingInput}
+              onFocus={() => setFocusField('averageRating')}
+              onBlur={() => setFocusField(null)}
+              keyboardType="decimal-pad"
+            />
+          </View>
+        </View>
+
+        {/* Language */}
+        <View className="mb-5">
+          <Text
+            className="text-[#8892B0] text-xs mb-2 tracking-widest"
+            style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+            {t('bookMetaLanguage')}
+          </Text>
+          <TextInput
+            className="rounded-xl px-4 py-4 text-white text-base"
+            style={inputStyle('language')}
+            placeholderTextColor="#4A5568"
+            placeholder="en, tr..."
+            value={language}
+            onChangeText={setLanguage}
+            onFocus={() => setFocusField('language')}
+            onBlur={() => setFocusField(null)}
+            autoCapitalize="none"
+          />
         </View>
 
         {/* Translator */}
