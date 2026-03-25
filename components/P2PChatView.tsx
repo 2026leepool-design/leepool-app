@@ -351,7 +351,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
         console.warn('[P2PChat] fallback maps URL failed', e2);
         const msg = t('openMapFailed');
         if (Platform.OS === 'web') {
-          (window as Window).alert(msg);
+          window.alert(msg);
         } else {
           Alert.alert(t('error'), msg);
         }
@@ -368,7 +368,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
       if (status !== 'granted') {
         const msg = t('locationShareError');
         if (Platform.OS === 'web') {
-          (window as Window).alert(msg);
+          window.alert(msg);
         } else {
           Alert.alert(t('error'), msg);
         }
@@ -397,7 +397,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
         setMessages((prev) => prev.filter((m) => m.id !== optId));
         const msg = t('locationShareError');
         if (Platform.OS === 'web') {
-          (window as Window).alert(msg);
+          window.alert(msg);
         } else {
           Alert.alert(t('error'), msg);
         }
@@ -406,7 +406,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
       console.warn('[P2PChat] location failed', e);
       const msg = t('locationShareError');
       if (Platform.OS === 'web') {
-        (window as Window).alert(msg);
+        window.alert(msg);
       } else {
         Alert.alert(t('error'), msg);
       }
