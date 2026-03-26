@@ -128,9 +128,9 @@ export default function LoginScreen() {
       }
       setCachedAccountPassword(password);
       navigateIn();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      Alert.alert(t('error'), err.message ?? String(err));
+      Alert.alert(t('error'), err instanceof Error ? err.message : String(err));
     } finally {
       setClassicLoading(false);
     }
@@ -172,9 +172,9 @@ export default function LoginScreen() {
         setCachedAccountPassword(null);
         Alert.alert(t('success'), t('signUpSuccess'));
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      Alert.alert(t('error'), err.message ?? String(err));
+      Alert.alert(t('error'), err instanceof Error ? err.message : String(err));
     } finally {
       setClassicLoading(false);
     }
