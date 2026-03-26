@@ -59,7 +59,7 @@ export function NostrIdentitySection() {
     const pwd = getCachedAccountPassword();
     if (pwd) {
       try {
-        await pushNostrProfileFromLocalKeys(pwd);
+        await pushNostrProfileFromLocalKeys(pwd, user.id);
       } catch {
         setCloudPushVisible(true);
       }
