@@ -153,8 +153,9 @@ export default function EditBookScreen() {
           const cov = b.cover_url ?? null;
           let lig = b.lightning_address ?? '';
           if (!lig.trim()) {
-            const { data: { user: authUser } } = await supabase.auth.getUser();
-            const def = getDefaultLightningWalletFromMetadata(authUser);
+            const { data: { session } } = await supabase.auth.getSession();
+            const authUser = session?.user;
+            const def = getDefaultLightningWalletFromMetadata(authUser || null);
             if (def) lig = def;
           }
           const rs = b.reading_started_at ? new Date(b.reading_started_at) : null;
@@ -480,10 +481,10 @@ export default function EditBookScreen() {
       if (error) throw error;
 
       if (pagesAdded > 0) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user?.id) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id) {
           await supabase.from('reading_logs').insert({
-            user_id: user.id,
+            user_id: session.user.id,
             book_id: id,
             pages_read: pagesAdded,
           });
@@ -517,6 +518,7 @@ export default function EditBookScreen() {
     readingStartedAt,
     readingFinishedAt,
     book?.read_pages,
+    book?.subjects,
     t,
     router,
   ]);
