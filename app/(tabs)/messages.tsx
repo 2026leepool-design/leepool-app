@@ -197,34 +197,47 @@ export default function MessagesScreen() {
     // Decrypt events and group by peer
     const convMap = new Map<string, Conversation>();
 
-    const decryptResults = await Promise.allSettled(
-      events.map(async (ev) => {
-        const isFromMe = ev.pubkey === k.publicKey;
-        let peerHex: string;
+    // Process decryptions in chunks to prevent unbounded concurrent promises
+    // which can block the JS thread and cause memory spikes
+    const CHUNK_SIZE = 50;
+    const decryptResults = [];
 
-        if (isFromMe) {
-          const pTag = ev.tags.find((t) => t[0] === 'p');
-          peerHex = pTag?.[1] ?? '';
-        } else {
-          peerHex = ev.pubkey;
-        }
+    for (let i = 0; i < events.length; i += CHUNK_SIZE) {
+      const chunk = events.slice(i, i + CHUNK_SIZE);
+      const chunkResults = await Promise.allSettled(
+        chunk.map(async (ev) => {
+          const isFromMe = ev.pubkey === k.publicKey;
+          let peerHex: string;
 
-        if (!peerHex) return null;
-
-        let plaintext = '';
-        try {
           if (isFromMe) {
-            plaintext = await nip04.decrypt(k.privateKey, peerHex, ev.content);
+            const pTag = ev.tags.find((t) => t[0] === 'p');
+            peerHex = pTag?.[1] ?? '';
           } else {
-            plaintext = await nip04.decrypt(k.privateKey, peerHex, ev.content);
+            peerHex = ev.pubkey;
           }
-        } catch {
-          return null;
-        }
 
-        return { peerHex, plaintext, created_at: ev.created_at };
-      })
-    );
+          if (!peerHex) return null;
+
+          let plaintext = '';
+          try {
+            if (isFromMe) {
+              plaintext = await nip04.decrypt(k.privateKey, peerHex, ev.content);
+            } else {
+              plaintext = await nip04.decrypt(k.privateKey, peerHex, ev.content);
+            }
+          } catch {
+            return null;
+          }
+
+          return { peerHex, plaintext, created_at: ev.created_at };
+        })
+      );
+
+      decryptResults.push(...chunkResults);
+
+      // Yield to the event loop between chunks to keep UI responsive
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
 
     for (const result of decryptResults) {
       if (result.status !== 'fulfilled' || !result.value) continue;

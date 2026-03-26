@@ -164,7 +164,7 @@ export default function SearchScreen() {
           <Text
             className="text-[#8892B0] text-xs"
             style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-            "{localQuery}"
+            &quot;{localQuery}&quot;
           </Text>
         </View>
       )}
