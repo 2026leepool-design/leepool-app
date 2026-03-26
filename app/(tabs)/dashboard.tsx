@@ -231,10 +231,10 @@ export default function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
-      async function loadStats() {
+
+      async function loadStats(authUser: any) {
         setLoading(true);
         try {
-          const { data: { user: authUser } } = await supabase.auth.getUser();
           const statsQuery = supabase
             .from('books')
             .select('current_value, total_pages, read_pages, status, sale_status');
@@ -269,9 +269,9 @@ export default function DashboardScreen() {
           if (isMounted) setLoading(false);
         }
       }
-      async function loadUser() {
+
+      async function loadUser(user: any) {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
           if (isMounted && user) {
             setUserName(user.email?.split('@')[0] || t('user'));
           }
@@ -279,13 +279,14 @@ export default function DashboardScreen() {
           // fail silently
         }
       }
+
       async function loadRates() {
         const rates = await fetchBitcoinRates();
         if (isMounted && rates) setBtcRates(rates);
       }
-      async function fetchReadingLogs() {
+
+      async function fetchReadingLogs(user: any) {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
           if (!user?.id || !isMounted) return;
           const oneYearAgo = new Date();
           oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
@@ -300,10 +301,22 @@ export default function DashboardScreen() {
           // silently fail
         }
       }
-      loadStats();
-      loadUser();
+
+      async function initializeDashboard() {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!isMounted) return;
+          loadStats(user);
+          loadUser(user);
+          fetchReadingLogs(user);
+        } catch {
+          // silently fail
+        }
+      }
+
+      initializeDashboard();
       loadRates();
-      fetchReadingLogs();
+
       return () => { isMounted = false; };
     }, [t])
   );
