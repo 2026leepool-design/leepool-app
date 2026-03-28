@@ -22,9 +22,13 @@ type ProfileRow = {
  * - Sunucuda sealed nsec varsa → çöz, yerel depoya yaz (web: localStorage, native: SecureStore).
  * - Yoksa → yerelde anahtar varsa buluta yükle; yoksa yeni çift üret ve buluta yaz.
  */
-export async function syncNostrProfileAfterAuth(password: string): Promise<void> {
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !user?.id) return;
+export async function syncNostrProfileAfterAuth(password: string, userId?: string): Promise<void> {
+  let finalUserId = userId;
+  if (!finalUserId) {
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !user?.id) return;
+    finalUserId = user.id;
+  }
 
   const { data: profile, error: profErr } = await supabase
     .from('profiles')
@@ -41,7 +45,7 @@ export async function syncNostrProfileAfterAuth(password: string): Promise<void>
       row.encrypted_nsec,
       password,
       null,
-      user.id
+      finalUserId
     );
     if (!nsec) {
       throw new Error('NOSTR_DECRYPT_FAILED');
@@ -57,11 +61,11 @@ export async function syncNostrProfileAfterAuth(password: string): Promise<void>
       local.nsec,
       password,
       saltHex,
-      user.id
+      finalUserId
     );
     const { error: upErr } = await supabase.from('profiles').upsert(
       {
-        id: user.id,
+        id: finalUserId,
         npub: local.npub,
         encrypted_nsec: encrypted,
         updated_at: new Date().toISOString(),
@@ -74,10 +78,10 @@ export async function syncNostrProfileAfterAuth(password: string): Promise<void>
 
   const keys = await generateAndSaveKeys();
   const saltHex = generateNostrKeySalt();
-  const encrypted = await encryptNsecForProfile(keys.nsec, password, saltHex, user.id);
+  const encrypted = await encryptNsecForProfile(keys.nsec, password, saltHex, finalUserId);
   const { error: upErr } = await supabase.from('profiles').upsert(
     {
-      id: user.id,
+      id: finalUserId,
       npub: keys.npub,
       encrypted_nsec: encrypted,
       updated_at: new Date().toISOString(),
@@ -93,10 +97,15 @@ export async function syncNostrProfileAfterAuth(password: string): Promise<void>
  */
 export async function importNostrKeyAndSealToProfile(
   nsecRaw: string,
-  accountPassword: string
+  accountPassword: string,
+  userId?: string
 ): Promise<NostrKeys> {
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !user?.id) throw new Error('no user');
+  let finalUserId = userId;
+  if (!finalUserId) {
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !user?.id) throw new Error('no user');
+    finalUserId = user.id;
+  }
 
   const keys = parseNsecKeyMaterial(nsecRaw);
 
@@ -105,12 +114,12 @@ export async function importNostrKeyAndSealToProfile(
     keys.nsec,
     accountPassword,
     saltHex,
-    user.id
+    finalUserId
   );
 
   const { error: upErr } = await supabase.from('profiles').upsert(
     {
-      id: user.id,
+      id: finalUserId,
       npub: keys.npub,
       encrypted_nsec: encrypted,
       updated_at: new Date().toISOString(),
@@ -124,9 +133,13 @@ export async function importNostrKeyAndSealToProfile(
 }
 
 /** Yereldeki anahtarı (import/generate sonrası) profile şifreleyerek yazar. */
-export async function pushNostrProfileFromLocalKeys(password: string): Promise<void> {
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !user?.id) throw new Error('no user');
+export async function pushNostrProfileFromLocalKeys(password: string, userId?: string): Promise<void> {
+  let finalUserId = userId;
+  if (!finalUserId) {
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !user?.id) throw new Error('no user');
+    finalUserId = user.id;
+  }
 
   const local = await loadKeys();
   if (!local) throw new Error('no local keys');
@@ -136,12 +149,12 @@ export async function pushNostrProfileFromLocalKeys(password: string): Promise<v
     local.nsec,
     password,
     saltHex,
-    user.id
+    finalUserId
   );
 
   const { error } = await supabase.from('profiles').upsert(
     {
-      id: user.id,
+      id: finalUserId,
       npub: local.npub,
       encrypted_nsec: encrypted,
       updated_at: new Date().toISOString(),
@@ -152,14 +165,18 @@ export async function pushNostrProfileFromLocalKeys(password: string): Promise<v
 }
 
 /** Yerel anahtar yok ama bulutta yedek var — şifre ile geri yükle. */
-export async function restoreNostrFromCloud(password: string): Promise<void> {
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !user?.id) throw new Error('no user');
+export async function restoreNostrFromCloud(password: string, userId?: string): Promise<void> {
+  let finalUserId = userId;
+  if (!finalUserId) {
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !user?.id) throw new Error('no user');
+    finalUserId = user.id;
+  }
 
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('encrypted_nsec')
-    .eq('id', user.id)
+    .eq('id', finalUserId)
     .maybeSingle();
 
   if (error) throw error;
@@ -172,16 +189,20 @@ export async function restoreNostrFromCloud(password: string): Promise<void> {
     row.encrypted_nsec,
     password,
     null,
-    user.id
+    finalUserId
   );
   if (!nsec) throw new Error('NOSTR_DECRYPT_FAILED');
   await importNsecKey(nsec);
 }
 
 /** Kimlik silindiğinde uzak profildeki Nostr alanlarını temizle. */
-export async function clearNostrProfileRemote(): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) return;
+export async function clearNostrProfileRemote(userId?: string): Promise<void> {
+  let finalUserId = userId;
+  if (!finalUserId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return;
+    finalUserId = user.id;
+  }
 
   await supabase
     .from('profiles')
@@ -190,5 +211,5 @@ export async function clearNostrProfileRemote(): Promise<void> {
       encrypted_nsec: null,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', user.id);
+    .eq('id', finalUserId);
 }

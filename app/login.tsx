@@ -105,13 +105,13 @@ export default function LoginScreen() {
     }
     setClassicLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
       if (error) throw error;
       try {
-        await syncNostrProfileAfterAuth(password);
+        await syncNostrProfileAfterAuth(password, data.session?.user?.id);
       } catch (syncErr: unknown) {
         console.error(syncErr);
         await supabase.auth.signOut();
@@ -150,7 +150,7 @@ export default function LoginScreen() {
       if (error) throw error;
       if (data.session) {
         try {
-          await syncNostrProfileAfterAuth(password);
+          await syncNostrProfileAfterAuth(password, data.session.user.id);
         } catch (syncErr: unknown) {
           console.error(syncErr);
           await supabase.auth.signOut();
