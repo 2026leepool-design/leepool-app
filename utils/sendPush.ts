@@ -50,8 +50,6 @@ export async function sendPushNotification(
       console.error('Expo push HTTP hatası:', res.status, text);
       return;
     }
-
-    console.log('ŞİMŞEK ÇAKTI: Bildirim başarıyla fırlatıldı!');
   } catch (err) {
     console.error('Bildirim gönderilirken hata:', err);
   }
