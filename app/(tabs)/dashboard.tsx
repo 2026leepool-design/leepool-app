@@ -263,8 +263,8 @@ export default function DashboardScreen() {
               return row.sale_status === 'for_sale';
             }).length,
           });
-        } catch {
-          // silently fail
+        } catch (error) {
+          console.debug('Failed to load stats:', error);
         } finally {
           if (isMounted) setLoading(false);
         }
@@ -275,8 +275,8 @@ export default function DashboardScreen() {
           if (isMounted && user) {
             setUserName(user.email?.split('@')[0] || t('user'));
           }
-        } catch {
-          // fail silently
+        } catch (error) {
+          console.debug('Failed to load user:', error);
         }
       }
       async function loadRates() {
@@ -296,8 +296,8 @@ export default function DashboardScreen() {
             .gte('created_at', oneYearAgo.toISOString())
             .order('created_at', { ascending: true });
           if (isMounted && data) setAllReadingLogs(data);
-        } catch {
-          // silently fail
+        } catch (error) {
+          console.debug('Failed to fetch reading logs:', error);
         }
       }
       loadStats();
