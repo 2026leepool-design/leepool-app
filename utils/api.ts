@@ -1,6 +1,4 @@
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? '';
-const GEMINI_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+import { analyzeBookCoverForSearch } from './gemini';
 
 export type GoogleBookResult = {
   id: string;
@@ -161,51 +159,8 @@ export async function searchGoogleBooks(query: string): Promise<GoogleBookResult
 /**
  * Analyzes a book cover image using Gemini Vision API.
  * Returns "Kitap Adı - Yazar Adı" format string.
+ * @deprecated Use analyzeBookCoverForSearch from utils/gemini instead.
  */
 export async function analyzeBookCover(base64Image: string): Promise<string | null> {
-  if (!GEMINI_API_KEY) {
-    console.warn('EXPO_PUBLIC_GEMINI_API_KEY is not set');
-    return null;
-  }
-
-  const prompt =
-    'Bu resimdeki kitabın adını ve yazarını bul. Sadece "Kitap Adı - Yazar Adı" formatında yanıt ver. Başka bir şey yazma.';
-
-  const rawBase64 = base64Image.includes(',')
-    ? base64Image.split(',')[1] ?? base64Image
-    : base64Image;
-
-  try {
-    const res = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              {
-                inline_data: {
-                  mime_type: 'image/jpeg',
-                  data: rawBase64,
-                },
-              },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!res.ok) throw new Error(await res.text());
-    const data = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
-  } catch (err) {
-    console.error('analyzeBookCover error:', err);
-    return null;
-  }
+  return analyzeBookCoverForSearch(base64Image);
 }
