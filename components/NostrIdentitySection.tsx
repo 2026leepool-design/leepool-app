@@ -128,7 +128,7 @@ export function NostrIdentitySection() {
     if (!text) {
       const msg = t('fillAllFields');
       if (Platform.OS === 'web') {
-        (window as Window).alert(msg);
+        window.alert(msg);
       } else {
         Alert.alert(t('error'), msg);
       }
@@ -142,14 +142,14 @@ export function NostrIdentitySection() {
       setImportNsec('');
       await maybeOfferCloudSyncAfterKeyChange();
       if (Platform.OS === 'web') {
-        (window as Window).alert(t('identityImportedSuccess'));
+        window.alert(t('identityImportedSuccess'));
       } else {
         Alert.alert(t('success'), t('identityImportedSuccess'));
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (Platform.OS === 'web') {
-        (window as Window).alert(msg);
+        window.alert(msg);
       } else {
         Alert.alert(t('error'), msg);
       }
@@ -230,7 +230,7 @@ export function NostrIdentitySection() {
     const pwd = importKeyModalPassword.trim();
     if (!nsec || !pwd) {
       if (Platform.OS === 'web') {
-        (window as Window).alert(t('fillAllFields'));
+        window.alert(t('fillAllFields'));
       } else {
         Alert.alert(t('error'), t('fillAllFields'));
       }
@@ -246,7 +246,7 @@ export function NostrIdentitySection() {
       setImportKeyModalPassword('');
       nostrSwipeableRef.current?.close();
       if (Platform.OS === 'web') {
-        (window as Window).alert(t('identityImportedSuccess'));
+        window.alert(t('identityImportedSuccess'));
       } else {
         Alert.alert(t('success'), t('identityImportedSuccess'));
       }
@@ -257,7 +257,7 @@ export function NostrIdentitySection() {
           ? String((err as Error).message)
           : String(err);
       if (Platform.OS === 'web') {
-        (window as Window).alert(msg || t('error'));
+        window.alert(msg || t('error'));
       } else {
         Alert.alert(t('error'), msg || t('error'));
       }

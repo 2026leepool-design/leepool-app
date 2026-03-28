@@ -344,7 +344,7 @@ export default function DashboardScreen() {
       } catch (err: any) {
         const msg = err?.message ?? String(err);
         if (Platform.OS === 'web') {
-          (window as any).alert(msg);
+          window.alert(msg);
         } else {
           Alert.alert(t('error'), msg);
         }
@@ -352,7 +352,7 @@ export default function DashboardScreen() {
     };
 
     if (Platform.OS === 'web') {
-      if ((window as any).confirm(t('signOutConfirm'))) await doSignOut();
+      if (window.confirm(t('signOutConfirm'))) await doSignOut();
       return;
     }
 
