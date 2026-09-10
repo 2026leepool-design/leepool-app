@@ -1,50 +1,119 @@
-# Welcome to your Expo app 👋
+# LeePool
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+LeePool es una biblioteca digital y un mercado P2P para registrar, descubrir y dar movimiento a los libros físicos.
 
-## Get started
+La aplicación combina seguimiento de lectura, progreso por páginas, biblioteca personal, valor económico de los ejemplares y compraventa directa entre lectores mediante Nostr y Lightning.
 
-1. Install dependencies
+## Última versión
 
-   ```bash
-   npm install
-   ```
+**Versión:** `4.0.0`  
+**Estado:** última versión en desarrollo / distribución interna  
+**Plataformas:** web y Android
 
-2. Start the app
+| Plataforma | Acceso | Estado |
+| --- | --- | --- |
+| Web | [Abrir LeePool](https://leepool.vercel.app/) | Última versión publicada |
+| Android APK | [Descargar la última APK desde Expo](https://expo.dev/accounts/leepool/projects/LeePool/builds/2423aa02-53a6-412b-baba-3262c6e7ae4c) | Build `4.0.0` en preparación |
 
-   ```bash
-   npx expo start
-   ```
+> La página de Expo es el enlace permanente para la APK más reciente. Cuando la build termine, mostrará el botón de descarga del archivo `.apk`.
 
-In the output, you'll find options to open the app in a
+## Funcionalidades principales
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- Biblioteca organizada por libros comprados, leídos, en lectura, pendientes, en venta y vendidos.
+- Progreso de lectura por páginas y registro temporal.
+- Marcadores, notas y seguimiento del hábito lector.
+- Escáner de ISBN para añadir libros rápidamente.
+- Búsqueda y enriquecimiento de metadatos con Open Library, Google Books y servicios auxiliares.
+- Sinopsis y análisis asistidos por IA mediante Supabase Edge Functions.
+- Mercado P2P con precios en satoshis, estado y condición del ejemplar.
+- Ofertas privadas y mensajería cifrada sobre Nostr.
+- Pagos Lightning mediante Lightning Address y Nostr Wallet Connect.
+- Identidad Nostr local con respaldo cifrado opcional.
+- Estadísticas de páginas, libros y valor de biblioteca.
+- Interfaz responsive para navegador y Android.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Wallets y pagos
 
-## Get a fresh project
+Los vendedores publican una Lightning Address (LUD-16) para poder recibir facturas. Los compradores pueden conectar una wallet compatible con Nostr Wallet Connect desde:
 
-When you're ready, run:
+**Perfil → Nostr Wallet Connect**
+
+La URI NWC se guarda únicamente en el dispositivo. LeePool utiliza NIP-44 cuando la wallet lo soporta y NIP-04 como compatibilidad con wallets antiguas.
+
+## Configuración local
+
+Requisitos:
+
+- Node.js
+- npm
+- Expo SDK 54
+- Una cuenta de Expo EAS para generar APKs
+
+Instala las dependencias:
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Copia `.env.example` a `.env` y configura las credenciales públicas de Supabase:
 
-## Learn more
+```bash
+EXPO_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+Inicia el proyecto:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npm run web
+```
 
-## Join the community
+Para Android local:
 
-Join our community of developers creating universal apps.
+```bash
+npm run android
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Generar una APK Android
+
+La configuración de distribución interna está en `eas.json` y usa el perfil `preview`:
+
+```bash
+npx.cmd eas-cli@latest login
+npx.cmd eas-cli@latest build --platform android --profile preview
+```
+
+La build se publica en [Expo → LeePool → Builds](https://expo.dev/accounts/leepool/projects/LeePool/builds).
+
+## Base de datos
+
+LeePool utiliza Supabase para autenticación, biblioteca, mercado, notificaciones, funciones Edge y migraciones SQL. El proyecto de producción es:
+
+`jwtcuhbdyabhvttjisqe`
+
+Las migraciones se encuentran en [supabase/migrations](./supabase/migrations).
+
+## Estructura
+
+```text
+app/          Pantallas y rutas Expo Router
+components/   Componentes reutilizables
+utils/        Supabase, Nostr, Lightning, NWC y servicios de libros
+locales/      Traducciones en español, inglés y turco
+supabase/     Migraciones y Edge Functions
+assets/       Iconos, splash screen e imágenes
+```
+
+## Verificación
+
+```bash
+npx tsc --noEmit
+npx eslint utils/nwc.ts app/profile.tsx components/P2PChatView.tsx utils/nostrProfileSync.ts
+npx expo export --platform web
+```
+
+La exportación web genera el directorio `dist/`. Los tipos de las funciones Deno de Supabase y los tests que usan `bun:test` requieren sus runtimes específicos.
+
+## Estado del producto
+
+La base funcional actual cubre biblioteca, lectura, ISBN, mercado P2P, Nostr y pagos Lightning. Como siguientes líneas de producto quedan ebooks, libros propios/editoriales, filtros avanzados por edición/firma/subrayado y club de lectura.
