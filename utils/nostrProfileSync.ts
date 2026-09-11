@@ -33,7 +33,7 @@ export async function syncNostrProfileAfterAuth(password: string, userId?: strin
   const { data: profile, error: profErr } = await supabase
     .from('profiles')
     .select('npub, encrypted_nsec')
-    .eq('id', user.id)
+    .eq('id', finalUserId)
     .maybeSingle();
 
   if (profErr) throw profErr;
@@ -195,7 +195,7 @@ export async function restoreNostrFromCloud(password: string, userId?: string): 
   await importNsecKey(nsec);
 }
 
-/** Kimlik silindiğinde uzak profildeki Nostr alanlarını temizle. */
+/** Kimlik silindiğinde uzak profildeki Nostr alanlarını temizler. */
 export async function clearNostrProfileRemote(userId?: string): Promise<void> {
   let finalUserId = userId;
   if (!finalUserId) {
