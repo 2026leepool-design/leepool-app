@@ -36,6 +36,14 @@ export async function generateBookSynopsis(
       text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) text = jsonMatch[0].trim();
+      try {
+        const parsed = JSON.parse(text) as Record<string, unknown>;
+        const normalized = { tr: String(parsed.tr ?? ''), en: String(parsed.en ?? ''), es: String(parsed.es ?? '') };
+        if (!normalized.tr && !normalized.en && !normalized.es) return null;
+        text = JSON.stringify(normalized);
+      } catch {
+        // Keep a plain-text answer usable if Gemini ignored the JSON instruction.
+      }
     }
     return text;
   } catch (error) {

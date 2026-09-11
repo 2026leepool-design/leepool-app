@@ -95,7 +95,7 @@ export default function RootLayout() {
         />
       </Stack>
       <ReleaseNotesGate />
-      <StatusBar style="light" />
+      <StatusBar style="light" backgroundColor="#000000" translucent={false} />
     </View>
     </GestureHandlerRootView>
   );

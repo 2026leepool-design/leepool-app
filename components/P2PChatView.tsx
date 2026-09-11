@@ -22,6 +22,7 @@ import * as nip19 from 'nostr-tools/nip19';
 import { loadKeys, sendEncryptedMessage, RELAYS } from '@/utils/nostr';
 import { supabase } from '@/utils/supabase';
 import { payLightningInvoice } from '@/utils/lightning';
+import { loadNwcConnection, payInvoiceWithNwc } from '@/utils/nwc';
 import {
   tryParseStructuredNostrMessage,
   buildOfferAcceptedMessage,
@@ -495,13 +496,31 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
           return;
         }
 
-        await payLightningInvoice(
-          book.lightning_address.trim(),
-          accepted.amount,
-          `${String(book.title)} - LeePool P2P`,
-          t('error'),
-          t('lightningWalletOpenFailed')
-        );
+        const invoiceComment = `${String(book.title)} - LeePool P2P`;
+        const nwc = await loadNwcConnection();
+        if (nwc) {
+          const atIndex = book.lightning_address.trim().indexOf('@');
+          if (atIndex < 1) throw new Error('Seller Lightning Address is invalid.');
+          const username = book.lightning_address.trim().slice(0, atIndex);
+          const domain = book.lightning_address.trim().slice(atIndex + 1);
+          const lnurlResponse = await fetch(`https://${domain}/.well-known/lnurlp/${username}`);
+          if (!lnurlResponse.ok) throw new Error('Seller Lightning Address could not be resolved.');
+          const lnurl = await lnurlResponse.json() as { callback?: string };
+          if (!lnurl.callback) throw new Error('Seller wallet returned no payment callback.');
+          const invoiceResponse = await fetch(`${lnurl.callback}${lnurl.callback.includes('?') ? '&' : '?'}amount=${accepted.amount * 1000}`);
+          if (!invoiceResponse.ok) throw new Error('Seller invoice could not be created.');
+          const invoicePayload = await invoiceResponse.json() as { pr?: string; status?: string; reason?: string };
+          if (!invoicePayload.pr || invoicePayload.status === 'ERROR') throw new Error(invoicePayload.reason || 'Seller invoice could not be created.');
+          await payInvoiceWithNwc(invoicePayload.pr, accepted.amount, invoiceComment);
+        } else {
+          await payLightningInvoice(
+            book.lightning_address.trim(),
+            accepted.amount,
+            invoiceComment,
+            t('error'),
+            t('lightningWalletOpenFailed')
+          );
+        }
         addLocalTerminalOffer(accepted.offerId);
       } catch (e) {
         if (e instanceof Error && !e.message.includes('Payment')) {

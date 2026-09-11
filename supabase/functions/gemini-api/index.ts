@@ -30,7 +30,7 @@ serve(async (req) => {
 
     if (action === "generateSynopsis") {
       const { title, author } = payload;
-      prompt = `Sen profesyonel bir kitap özetleyicisin. Bana ${title} - ${author} kitabı hakkında maksimum 2 cümlelik kısa ve çarpıcı bir özet ver. Rol yapma, yorum ekleme. Yanıtı SADECE şu JSON formatında ver, markdown veya backtick kullanma: {"tr": "Türkçe özet", "en": "English summary", "es": "Resumen en español"}`;
+      prompt = `You are a professional book summarizer. For the book "${title}" by "${author}", write a short, factual synopsis of at most two sentences in Turkish, English and Spanish. Do not invent details or add commentary. Return only an object with exactly these keys: tr, en, es.`;
       bodyContents = [{ parts: [{ text: prompt }] }];
     } else if (action === "analyzeBookCover") {
       const { base64Image } = payload;
@@ -77,13 +77,16 @@ serve(async (req) => {
       });
     }
 
+    const generationConfig = action === "generateSynopsis"
+      ? { temperature: 0.3, responseMimeType: "application/json" }
+      : undefined;
     const response = await fetch(GEMINI_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-goog-api-key": GEMINI_API_KEY,
       },
-      body: JSON.stringify({ contents: bodyContents }),
+      body: JSON.stringify({ contents: bodyContents, ...(generationConfig ? { generationConfig } : {}) }),
     });
 
     if (!response.ok) {

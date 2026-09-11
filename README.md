@@ -6,14 +6,14 @@ La aplicación combina seguimiento de lectura, progreso por páginas, biblioteca
 
 ## Última versión
 
-**Versión:** `4.0.0`  
-**Estado:** última versión en desarrollo / distribución interna  
+**Versión:** `4.0.6`
+**Estado:** última versión en desarrollo / distribución interna
 **Plataformas:** web y Android
 
 | Plataforma | Acceso | Estado |
 | --- | --- | --- |
 | Web | [Abrir LeePool](https://leepool.vercel.app/) | Última versión publicada |
-| Android APK | [Descargar la última APK desde Expo](https://expo.dev/accounts/leepool/projects/LeePool/builds/2423aa02-53a6-412b-baba-3262c6e7ae4c) | Build `4.0.0` en preparación |
+| Android APK | Build `4.0.6` en preparación; el enlace se actualizará cuando finalice el build | Última versión |
 
 > La página de Expo es el enlace permanente para la APK más reciente. Cuando la build termine, mostrará el botón de descarga del archivo `.apk`.
 
@@ -91,7 +91,7 @@ LeePool utiliza Supabase para autenticación, biblioteca, mercado, notificacione
 
 `jwtcuhbdyabhvttjisqe`
 
-Las migraciones se encuentran en [supabase/migrations](./supabase/migrations).
+Las migraciones se encuentran en [`supabase/migrations`](./supabase/migrations).
 
 ## Estructura
 

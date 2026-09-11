@@ -1,6 +1,7 @@
 import { setCachedAccountPassword } from '@/utils/authPasswordSession';
 import { supabase } from '@/utils/supabase';
-import { fetchBitcoinRates, type BtcRates } from '@/utils/currency';
+import { fetchBitcoinRates, type BtcRates, type DisplayCurrency } from '@/utils/currency';
+import { secureGetItem, secureSetItem } from '@/utils/platformSecureStorage';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -22,6 +23,9 @@ type Stats = {
   readPages: number;
   readCount: number;
   forSaleCount: number;
+  readingCount: number;
+  wishlistCount: number;
+  unfinishedBooks: { id: string; title: string; readPages: number; totalPages: number }[];
 };
 
 const LANGUAGES = [
@@ -112,10 +116,22 @@ export default function DashboardScreen() {
     readPages: 0,
     readCount: 0,
     forSaleCount: 0,
+    readingCount: 0,
+    wishlistCount: 0,
+    unfinishedBooks: [],
   });
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState<string | null>(null);
   const [btcRates, setBtcRates] = useState<BtcRates | null>(null);
+  const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('USD');
+  const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+
+  useEffect(() => {
+    secureGetItem('leepool_display_currency').then((value) => {
+      if (value && ['USD', 'EUR', 'TRY', 'BTC', 'SATS'].includes(value)) setDisplayCurrency(value as DisplayCurrency);
+    });
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
   const [analyzingCover, setAnalyzingCover] = useState(false);
@@ -237,12 +253,13 @@ export default function DashboardScreen() {
         try {
           const statsQuery = supabase
             .from('books')
-            .select('current_value, total_pages, read_pages, status, sale_status');
+            .select('id, title, current_value, total_pages, read_pages, status, sale_status');
           if (authUser?.id) statsQuery.eq('user_id', authUser.id);
           const { data, error } = await statsQuery;
           if (error) throw error;
           if (!isMounted) return;
           const rows = data ?? [];
+          const isFinished = (b: any) => b.status === 'read' || ((b.total_pages ?? 0) > 0 && (b.read_pages ?? 0) >= (b.total_pages ?? 0));
           setStats({
             bookCount: rows.length,
             totalValue: rows.reduce((s, b) => s + (b.current_value ?? 0), 0),
@@ -262,6 +279,9 @@ export default function DashboardScreen() {
               const row = b as { sale_status?: string | null };
               return row.sale_status === 'for_sale';
             }).length,
+            readingCount: rows.filter((b) => !isFinished(b) && (b.status === 'reading' || (b.read_pages ?? 0) > 0)).length,
+            wishlistCount: rows.filter((b) => !isFinished(b) && (b.status === 'unread' || (b.read_pages ?? 0) === 0)).length,
+            unfinishedBooks: rows.filter((b) => !isFinished(b)).map((b) => ({ id: b.id, title: b.title, readPages: b.read_pages ?? 0, totalPages: b.total_pages ?? 0 })),
           });
         } catch (error) {
           console.debug('Failed to load stats:', error);
@@ -435,11 +455,20 @@ export default function DashboardScreen() {
     ]);
   }, [t, runOmniSearchWithApiCheck]);
 
-  const progressPercent =
-    stats.totalPages > 0 ? Math.round((stats.readPages / stats.totalPages) * 100) : 0;
+  const formatValue = (val: number) => {
+    if (displayCurrency === 'USD') return val.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+    if (!btcRates) return '—';
+    if (displayCurrency === 'EUR') return (val * btcRates.eur / btcRates.usd).toLocaleString(undefined, { style: 'currency', currency: 'EUR' });
+    if (displayCurrency === 'TRY') return (val * (btcRates.try ?? 0) / btcRates.usd).toLocaleString(undefined, { style: 'currency', currency: 'TRY' });
+    if (displayCurrency === 'BTC') return `${(val / btcRates.usd).toFixed(8)} BTC`;
+    return `${Math.round((val / btcRates.usd) * 100_000_000).toLocaleString()} sats`;
+  };
 
-  const formatValue = (val: number) =>
-    val.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  const changeCurrency = (currency: DisplayCurrency) => {
+    setDisplayCurrency(currency);
+    setCurrencyMenuOpen(false);
+    void secureSetItem('leepool_display_currency', currency);
+  };
 
   return (
     <>
@@ -483,25 +512,24 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-          <View className="flex-row gap-2">
+          <View className="flex-row gap-2 items-center">
+            <TouchableOpacity onPress={() => setLanguageMenuOpen((v) => !v)} className="w-9 h-9 rounded-xl items-center justify-center border" style={{ backgroundColor: '#131B2B', borderColor: languageMenuOpen ? '#00E5FF' : 'rgba(136, 146, 176, 0.2)' }}>
+              <Ionicons name="globe-outline" size={18} color="#00E5FF" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/profile')} className="w-9 h-9 rounded-xl items-center justify-center border" style={{ backgroundColor: '#131B2B', borderColor: 'rgba(136, 146, 176, 0.2)' }}>
+              <Ionicons name="settings-outline" size={18} color="#8892B0" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        {languageMenuOpen ? (
+          <View className="flex-row justify-end gap-2 mb-3">
             {LANGUAGES.map((lang) => (
-              <TouchableOpacity
-                key={lang.code}
-                onPress={() => i18n.changeLanguage(lang.code)}
-                className="w-9 h-9 rounded-xl items-center justify-center border"
-                style={{
-                  backgroundColor: i18n.language.startsWith(lang.code)
-                    ? 'rgba(0, 229, 255, 0.15)'
-                    : '#131B2B',
-                  borderColor: i18n.language.startsWith(lang.code)
-                    ? '#00E5FF'
-                    : 'rgba(136, 146, 176, 0.2)',
-                }}>
+              <TouchableOpacity key={lang.code} onPress={() => { void i18n.changeLanguage(lang.code); setLanguageMenuOpen(false); }} className="rounded-lg px-3 py-2" style={{ backgroundColor: i18n.language.startsWith(lang.code) ? 'rgba(0,229,255,0.18)' : '#131B2B', borderWidth: 1, borderColor: i18n.language.startsWith(lang.code) ? '#00E5FF' : 'rgba(136,146,176,0.2)' }}>
                 <Text style={{ fontSize: 16 }}>{lang.flag}</Text>
               </TouchableOpacity>
             ))}
           </View>
-        </View>
+        ) : null}
 
         {/* ── Omni-Search Bar ── */}
         <View
@@ -650,7 +678,7 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* ── Overall progress card ── */}
+        {/* ── Unfinished reading bookmarks ── */}
         <View
           className="rounded-2xl p-5 mb-4"
           style={{
@@ -662,33 +690,47 @@ export default function DashboardScreen() {
             <Text
               className="text-[#8892B0] text-[10px] tracking-widest"
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              {t('progressTotal')}
+              {t('bookmarks')}
             </Text>
-            <Text
-              className="text-[#00E5FF] text-sm"
-              style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-              {loading ? '—' : `${progressPercent}%`}
+            <Text className="text-[#00E5FF] text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+              {loading ? '—' : stats.unfinishedBooks.length}
             </Text>
           </View>
-          <View
-            className="w-full rounded-full overflow-hidden mb-3"
-            style={{ height: 8, backgroundColor: '#0A0F1A' }}>
-            <View
-              className="rounded-full"
-              style={{
-                height: 8,
-                width: `${progressPercent}%`,
-                backgroundColor: '#00E5FF',
-              }}
-            />
-          </View>
-          <Text
-            className="text-[#8892B0] text-xs"
-            style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-            {loading
-              ? '—'
-              : `${stats.readPages.toLocaleString()} / ${stats.totalPages.toLocaleString()} ${t('pagesRead')}`}
-          </Text>
+          {stats.unfinishedBooks.length === 0 ? (
+            <Text className="text-[#8892B0] text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('noUnfinishedBooks')}
+            </Text>
+          ) : stats.unfinishedBooks.map((book) => {
+            const percent = book.totalPages > 0 ? Math.min(100, Math.round((book.readPages / book.totalPages) * 100)) : 0;
+            return (
+              <View key={book.id} className="mb-3">
+                <View className="flex-row justify-between mb-1">
+                  <Text className="text-[#E2E8F0] text-xs flex-1 mr-2" numberOfLines={1} style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>{book.title}</Text>
+                  <Text className="text-[#00E5FF] text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{percent}%</Text>
+                </View>
+                <View className="w-full rounded-full overflow-hidden" style={{ height: 7, backgroundColor: '#0A0F1A' }}>
+                  <View className="rounded-full" style={{ height: 7, width: `${percent}%`, backgroundColor: '#00E5FF' }} />
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        <View className="mb-4">
+          <TouchableOpacity onPress={() => setCurrencyMenuOpen((v) => !v)} className="self-end flex-row items-center gap-2 rounded-xl px-3 py-2" style={{ backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(0,229,255,0.25)' }}>
+            <Ionicons name="cash-outline" size={15} color="#00E5FF" />
+            <Text className="text-[#00E5FF] text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{displayCurrency}</Text>
+            <Ionicons name={currencyMenuOpen ? 'chevron-up' : 'chevron-down'} size={13} color="#8892B0" />
+          </TouchableOpacity>
+          {currencyMenuOpen ? (
+            <View className="self-end flex-row flex-wrap justify-end gap-2 mt-2">
+              {(['USD', 'EUR', 'TRY', 'BTC', 'SATS'] as DisplayCurrency[]).map((currency) => (
+                <TouchableOpacity key={currency} onPress={() => changeCurrency(currency)} className="rounded-lg px-3 py-2" style={{ backgroundColor: displayCurrency === currency ? 'rgba(0,229,255,0.18)' : '#131B2B', borderWidth: 1, borderColor: displayCurrency === currency ? '#00E5FF' : 'rgba(136,146,176,0.2)' }}>
+                  <Text className="text-xs" style={{ color: displayCurrency === currency ? '#00E5FF' : '#8892B0', fontFamily: 'SpaceGrotesk_600SemiBold' }}>{currency}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         {/* ── Stats grid row 1 ── */}
@@ -726,12 +768,16 @@ export default function DashboardScreen() {
               />
               <StatCard
                 label={t('filterRead')}
-                value={`${progressPercent}%`}
-                sub={`${stats.totalPages.toLocaleString()} ${t('totalPages').toLowerCase()}`}
+                value={String(stats.readCount)}
+                sub={t('finishedBooks')}
                 accent="#F59E0B"
                 icon="checkmark-circle-outline"
                 onPress={() => setIsReadChartVisible(true)}
               />
+            </View>
+            <View className="flex-row gap-3 mb-5">
+              <StatCard label={t('reading')} value={String(stats.readingCount)} accent="#F59E0B" icon="book-outline" onPress={() => router.push('/(tabs)/library')} />
+              <StatCard label={t('wishlist')} value={String(stats.wishlistCount)} accent="#B026FF" icon="heart-outline" onPress={() => router.push('/(tabs)/library')} />
             </View>
           </>
         )}

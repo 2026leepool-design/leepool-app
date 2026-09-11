@@ -6,6 +6,12 @@
  * when strict 12h has no commits) plus v4.0 features staged for this APK.
  */
 export const RELEASE_NOTES_LINES: string[] = [
+  'Dashboard 4.0.6: six clear library indicators for total books, value, sales, finished, reading, and wishlist.',
+  'Bookmarks: one progress bar per unfinished book; finished books no longer appear in this view.',
+  'Currency display: choose USD, EUR, TRY, BTC, or sats from the dashboard and keep the selection for your next visit.',
+  'Navigation: language selection is now grouped under the world icon and profile/settings under the settings icon.',
+  'Android: black system toolbar with content positioned inside the safe area for better visibility.',
+  'IA Sync: more reliable multilingual synopsis generation and validation when Gemini returns unexpected formatting.',
   'P2P chat: optional in-thread location sharing (permission-based), clearer display of shared places, and related copy updates.',
   'Dashboard: import an existing Nostr secret key (nsec) with your LeePool password, with improved validation and errors.',
   'Sign-in & keys: more reliable secure storage across platforms and clearer error logging on login and startup.',

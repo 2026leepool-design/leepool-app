@@ -195,7 +195,7 @@ export async function restoreNostrFromCloud(password: string, userId?: string): 
   await importNsecKey(nsec);
 }
 
-/** Kimlik silindiğinde uzak profildeki Nostr alanlarını temizler. */
+/** Kimlik silindiğinde uzak profildeki Nostr alanlarını temizle. */
 export async function clearNostrProfileRemote(userId?: string): Promise<void> {
   let finalUserId = userId;
   if (!finalUserId) {

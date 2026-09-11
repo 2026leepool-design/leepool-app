@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/utils/supabase';
 import { NostrIdentitySection } from '@/components/NostrIdentitySection';
+import { deleteNwcConnection, loadNwcConnection, saveNwcUri } from '@/utils/nwc';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
@@ -25,6 +26,9 @@ export default function ProfileScreen() {
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [defaultLightningWallet, setDefaultLightningWallet] = useState('');
+  const [nwcUri, setNwcUri] = useState('');
+  const [nwcConnected, setNwcConnected] = useState(false);
+  const [savingNwc, setSavingNwc] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(true);
@@ -43,6 +47,9 @@ export default function ProfileScreen() {
           setDisplayName(user.user_metadata?.display_name ?? user.email?.split('@')[0] ?? '');
           const ln = user.user_metadata?.default_lightning_address;
           setDefaultLightningWallet(typeof ln === 'string' ? ln : '');
+          const connection = await loadNwcConnection();
+          setNwcConnected(!!connection);
+          setNwcUri(connection ? 'nostr+walletconnect://…' : '');
         } catch {
           // silently fail
         } finally {
@@ -74,6 +81,26 @@ export default function ProfileScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSaveNwc = async () => {
+    setSavingNwc(true);
+    try {
+      const connection = await saveNwcUri(nwcUri);
+      setNwcConnected(true);
+      setNwcUri(`nostr+walletconnect://${connection.walletPubkey.slice(0, 8)}…`);
+      Alert.alert(t('success'), t('nwcConnected'));
+    } catch (err: any) {
+      Alert.alert(t('error'), err.message ?? String(err));
+    } finally {
+      setSavingNwc(false);
+    }
+  };
+
+  const handleDisconnectNwc = async () => {
+    await deleteNwcConnection();
+    setNwcConnected(false);
+    setNwcUri('');
   };
 
   const handleChangePassword = async () => {
@@ -191,6 +218,42 @@ export default function ProfileScreen() {
                 </Text>
               )}
             </TouchableOpacity>
+          </SectionCard>
+
+          <SectionCard title={t('nwcTitle')} icon="flash-outline" color="#FFD700">
+            <Text
+              className="text-[#8892B0] text-xs mb-4 leading-5"
+              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {t('nwcHint')}
+            </Text>
+            <CyberInput
+              value={nwcUri}
+              onChangeText={setNwcUri}
+              placeholder={t('nwcPlaceholder')}
+              accent="#FFD700"
+            />
+            {nwcConnected ? (
+              <TouchableOpacity
+                onPress={() => void handleDisconnectNwc()}
+                className="rounded-2xl py-4 items-center"
+                style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)', borderWidth: 1, borderColor: '#EF4444' }}>
+                <Text className="text-[#EF4444] text-sm tracking-widest" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                  {t('nwcDisconnect').toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => void handleSaveNwc()}
+                disabled={savingNwc || !nwcUri.trim()}
+                className="rounded-2xl py-4 items-center"
+                style={{ backgroundColor: 'rgba(255, 215, 0, 0.12)', borderWidth: 1, borderColor: '#FFD700', opacity: nwcUri.trim() ? 1 : 0.5 }}>
+                {savingNwc ? <ActivityIndicator color="#FFD700" /> : (
+                  <Text className="text-[#FFD700] text-sm tracking-widest" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                    {t('nwcConnect').toUpperCase()}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
           </SectionCard>
 
           <NostrIdentitySection />
