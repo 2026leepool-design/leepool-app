@@ -13,9 +13,9 @@ La aplicación combina seguimiento de lectura, progreso por páginas, biblioteca
 | Plataforma | Acceso | Estado |
 | --- | --- | --- |
 | Web | [Vercel](https://leepool.vercel.app/) · [Netlify](https://myleepool.netlify.app/) | Despliegue 4.1.3 |
-| Android APK | `leepool_v4.1.3.apk` · [Expo Builds](https://expo.dev/accounts/leepool/projects/LeePool/builds) | En generación |
+| Android APK | `leepool_v4.1.3.apk` · [Descargar desde Expo](https://expo.dev/accounts/leepool/projects/LeePool/builds/cd472f02-96ab-423e-90c3-d488424c1394) | Build terminada |
 
-> La APK se generará como `leepool_v4.1.3.apk` y el enlace de Expo se actualizará cuando finalice la build.
+> La APK `leepool_v4.1.3.apk` está terminada como distribución interna. El enlace de Expo permite instalarla o descargarla en un dispositivo Android.
 
 ## Funcionalidades principales
 
