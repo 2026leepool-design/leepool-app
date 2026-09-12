@@ -28,6 +28,13 @@ type Stats = {
   unfinishedBooks: { id: string; title: string; readPages: number; totalPages: number }[];
 };
 
+type MempoolFees = {
+  blockHeight: number | null;
+  fastestFee: number | null;
+  halfHourFee: number | null;
+  hourFee: number | null;
+};
+
 const LANGUAGES = [
   { code: 'tr', flag: '🇹🇷' },
   { code: 'en', flag: '🇺🇸' },
@@ -126,11 +133,31 @@ export default function DashboardScreen() {
   const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('USD');
   const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+  const [mempoolFees, setMempoolFees] = useState<MempoolFees>({ blockHeight: null, fastestFee: null, halfHourFee: null, hourFee: null });
+  const [mempoolMenuOpen, setMempoolMenuOpen] = useState(false);
 
   useEffect(() => {
     secureGetItem('leepool_display_currency').then((value) => {
       if (value && ['USD', 'EUR', 'TRY', 'BTC', 'SATS'].includes(value)) setDisplayCurrency(value as DisplayCurrency);
     });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetch('https://mempool.space/api/blocks/tip/height').then((r) => r.ok ? r.text() : null),
+      fetch('https://mempool.space/api/v1/fees/recommended').then((r) => r.ok ? r.json() : null),
+    ]).then(([height, fees]) => {
+      if (cancelled) return;
+      const value = fees as { fastestFee?: number; halfHourFee?: number; hourFee?: number } | null;
+      setMempoolFees({
+        blockHeight: height ? Number(height) : null,
+        fastestFee: value?.fastestFee ?? null,
+        halfHourFee: value?.halfHourFee ?? null,
+        hourFee: value?.hourFee ?? null,
+      });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
@@ -259,6 +286,11 @@ export default function DashboardScreen() {
           if (error) throw error;
           if (!isMounted) return;
           const rows = data ?? [];
+          const wishlistRaw = await secureGetItem('leepool_wishlist_ids');
+          let wishlistIds: string[] = [];
+          if (wishlistRaw) {
+            try { wishlistIds = JSON.parse(wishlistRaw) as string[]; } catch { wishlistIds = []; }
+          }
           const isFinished = (b: any) => b.status === 'read' || ((b.total_pages ?? 0) > 0 && (b.read_pages ?? 0) >= (b.total_pages ?? 0));
           setStats({
             bookCount: rows.length,
@@ -280,7 +312,7 @@ export default function DashboardScreen() {
               return row.sale_status === 'for_sale';
             }).length,
             readingCount: rows.filter((b) => !isFinished(b) && (b.status === 'reading' || (b.read_pages ?? 0) > 0)).length,
-            wishlistCount: rows.filter((b) => !isFinished(b) && (b.status === 'unread' || (b.read_pages ?? 0) === 0)).length,
+            wishlistCount: wishlistIds.length,
             unfinishedBooks: rows.filter((b) => !isFinished(b)).map((b) => ({ id: b.id, title: b.title, readPages: b.read_pages ?? 0, totalPages: b.total_pages ?? 0 })),
           });
         } catch (error) {
@@ -716,8 +748,26 @@ export default function DashboardScreen() {
           })}
         </View>
 
-        <View className="mb-4">
-          <TouchableOpacity onPress={() => setCurrencyMenuOpen((v) => !v)} className="self-end flex-row items-center gap-2 rounded-xl px-3 py-2" style={{ backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(0,229,255,0.25)' }}>
+        <View className="mb-4 flex-row items-center justify-end gap-2">
+          <View>
+          <TouchableOpacity onPress={() => setMempoolMenuOpen((v) => !v)} className="flex-row items-center gap-1 rounded-xl px-3 py-2" style={{ backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(255,170,0,0.3)' }}>
+            <Ionicons name="pulse-outline" size={15} color="#FFAA00" />
+            <Text className="text-[#FFAA00] text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+              {mempoolFees.blockHeight ? `B#${mempoolFees.blockHeight}` : 'B#—'}
+            </Text>
+            <Ionicons name={mempoolMenuOpen ? 'chevron-up' : 'chevron-down'} size={12} color="#8892B0" />
+          </TouchableOpacity>
+          {mempoolMenuOpen ? (
+            <View className="absolute right-0 top-11 z-20 rounded-xl p-2" style={{ width: 160, backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(255,170,0,0.35)' }}>
+              <Text className="text-[#8892B0] text-[10px] mb-1" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>sat/vB</Text>
+              <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>Rápida: {mempoolFees.fastestFee ?? '—'}</Text>
+              <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>30 min: {mempoolFees.halfHourFee ?? '—'}</Text>
+              <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>1 h: {mempoolFees.hourFee ?? '—'}</Text>
+            </View>
+          ) : null}
+          </View>
+          <View className="relative">
+          <TouchableOpacity onPress={() => setCurrencyMenuOpen((v) => !v)} className="flex-row items-center gap-2 rounded-xl px-3 py-2" style={{ backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(0,229,255,0.25)' }}>
             <Ionicons name="cash-outline" size={15} color="#00E5FF" />
             <Text className="text-[#00E5FF] text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{displayCurrency}</Text>
             <Ionicons name={currencyMenuOpen ? 'chevron-up' : 'chevron-down'} size={13} color="#8892B0" />
@@ -731,6 +781,7 @@ export default function DashboardScreen() {
               ))}
             </View>
           ) : null}
+          </View>
         </View>
 
         {/* ── Stats grid row 1 ── */}
@@ -747,7 +798,7 @@ export default function DashboardScreen() {
                 sub={`${stats.readCount} ${t('filterRead').toLowerCase()}`}
                 accent="#00E5FF"
                 icon="book-outline"
-                onPress={() => router.push('/(tabs)/library')}
+                onPress={() => router.push('/(tabs)/library?filter=all')}
               />
               <StatCard
                 label={t('libraryValue')}
@@ -764,7 +815,7 @@ export default function DashboardScreen() {
                 sub={btcRates ? `₿ $${Math.round((1 / 100_000_000) * btcRates.usd * 100_000).toLocaleString()}/100k sats` : '⚡ sats'}
                 accent="#00FF9D"
                 icon="storefront-outline"
-                onPress={() => router.push('/my-sales')}
+                onPress={() => router.push('/(tabs)/library?filter=for_sale')}
               />
               <StatCard
                 label={t('filterRead')}
@@ -772,12 +823,12 @@ export default function DashboardScreen() {
                 sub={t('finishedBooks')}
                 accent="#F59E0B"
                 icon="checkmark-circle-outline"
-                onPress={() => setIsReadChartVisible(true)}
+                onPress={() => router.push('/(tabs)/library?filter=finished')}
               />
             </View>
             <View className="flex-row gap-3 mb-5">
-              <StatCard label={t('reading')} value={String(stats.readingCount)} accent="#F59E0B" icon="book-outline" onPress={() => router.push('/(tabs)/library')} />
-              <StatCard label={t('wishlist')} value={String(stats.wishlistCount)} accent="#B026FF" icon="heart-outline" onPress={() => router.push('/(tabs)/library')} />
+              <StatCard label={t('reading')} value={String(stats.readingCount)} accent="#F59E0B" icon="book-outline" onPress={() => router.push('/(tabs)/library?filter=reading')} />
+              <StatCard label={t('wishlist')} value={String(stats.wishlistCount)} accent="#B026FF" icon="heart-outline" onPress={() => router.push('/(tabs)/market?filter=wishlist')} />
             </View>
           </>
         )}

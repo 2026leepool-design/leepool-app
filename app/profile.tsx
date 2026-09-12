@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/utils/supabase';
 import { NostrIdentitySection } from '@/components/NostrIdentitySection';
@@ -257,6 +258,17 @@ export default function ProfileScreen() {
           </SectionCard>
 
           <NostrIdentitySection />
+
+          <SectionCard title={t('aboutLeePool')} icon="information-circle-outline" color="#00E5FF">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-[#8892B0] text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                {t('currentVersion')}
+              </Text>
+              <Text className="text-[#00E5FF] text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                v{Constants.expoConfig?.version ?? '4.0.6'}
+              </Text>
+            </View>
+          </SectionCard>
 
           {/* ── Change Password ── */}
           <SectionCard title={t('changePassword')} icon="lock-closed-outline" color="#A855F7">

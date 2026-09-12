@@ -10,13 +10,14 @@ import {
   ScrollView,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect, type Href } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
 import { loadKeys } from '@/utils/nostr';
 import { fetchBitcoinRates, satsToUsd, type BtcRates } from '@/utils/currency';
 import { BookCardMetaChips } from '@/components/BookCard';
+import { secureGetItem, secureSetItem } from '@/utils/platformSecureStorage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -186,12 +187,16 @@ function MarketCard({
   onPress,
   isOwnBook,
   btcRates,
+  isWishlisted,
+  onToggleWishlist,
 }: {
   book: MarketBook;
   t: (key: string) => string;
   onPress: () => void;
   isOwnBook?: boolean;
   btcRates: BtcRates | null;
+  isWishlisted: boolean;
+  onToggleWishlist: () => void;
 }) {
   const cond = book.condition;
   const condLabel =
@@ -238,12 +243,17 @@ function MarketCard({
       {/* Info */}
       <View className="flex-1 min-w-0 justify-between">
         <View>
+          <View className="flex-row items-start">
           <Text
-            className="text-white text-base leading-tight mb-1"
+            className="text-white text-base leading-tight mb-1 flex-1"
             style={{ fontFamily: 'SpaceGrotesk_700Bold' }}
             numberOfLines={2}>
             {book.title}
           </Text>
+          <TouchableOpacity onPress={onToggleWishlist} hitSlop={8} className="ml-2">
+            <Ionicons name={isWishlisted ? 'heart' : 'heart-outline'} size={21} color={isWishlisted ? '#B026FF' : '#8892B0'} />
+          </TouchableOpacity>
+          </View>
           <Text
             className="text-[#8892B0] text-[10px] tracking-widest"
             style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
@@ -327,6 +337,7 @@ function MarketCard({
 export default function MarketTabScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const { filter } = useLocalSearchParams<{ filter?: string }>();
 
   const [books, setBooks] = useState<MarketBook[]>([]);
   const [loading, setLoading] = useState(true);
@@ -340,6 +351,7 @@ export default function MarketTabScreen() {
   const [filterAuthor, setFilterAuthor] = useState('');
   const [conditionFilter, setConditionFilter] = useState<ConditionFilter>('all');
   const [sortKey, setSortKey] = useState<MarketSort>('date_desc');
+  const [wishlistIds, setWishlistIds] = useState<string[]>([]);
 
   const displayedBooks = useMemo(() => {
     const filtered = filterMarketBooks(books, {
@@ -349,8 +361,15 @@ export default function MarketTabScreen() {
       authorQ: filterAuthor,
       condition: conditionFilter,
     });
-    return sortMarketBooks(filtered, sortKey);
-  }, [books, priceMin, priceMax, filterTitle, filterAuthor, conditionFilter, sortKey]);
+    const wishlistFiltered = filter === 'wishlist' ? filtered.filter((book) => wishlistIds.includes(book.id)) : filtered;
+    return sortMarketBooks(wishlistFiltered, sortKey);
+  }, [books, priceMin, priceMax, filterTitle, filterAuthor, conditionFilter, sortKey, filter, wishlistIds]);
+
+  const toggleWishlist = useCallback(async (id: string) => {
+    const next = wishlistIds.includes(id) ? wishlistIds.filter((value) => value !== id) : [...wishlistIds, id];
+    setWishlistIds(next);
+    await secureSetItem('leepool_wishlist_ids', JSON.stringify(next));
+  }, [wishlistIds]);
 
   const clearFilters = useCallback(() => {
     setPriceMin('');
@@ -367,6 +386,10 @@ export default function MarketTabScreen() {
       async function loadMarket() {
         setLoading(true);
         try {
+          const wishlistRaw = await secureGetItem('leepool_wishlist_ids');
+          if (wishlistRaw) {
+            try { setWishlistIds(JSON.parse(wishlistRaw) as string[]); } catch { setWishlistIds([]); }
+          }
           const [booksRes, keys, rates] = await Promise.all([
             supabase
               .from('books')
@@ -401,7 +424,7 @@ export default function MarketTabScreen() {
           <Text
             className="text-[#00FF9D] text-xl tracking-[0.2em]"
             style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-            {t('p2pMarket')}
+            {filter === 'wishlist' ? t('wishlist') : t('p2pMarket')}
           </Text>
           <View className="flex-row items-center gap-2">
             <TouchableOpacity
@@ -565,6 +588,8 @@ export default function MarketTabScreen() {
               onPress={() => router.push(`/book/${item.id}` as Href)}
               isOwnBook={!!myNpub && !!item.seller_npub && item.seller_npub === myNpub}
               btcRates={btcRates}
+              isWishlisted={wishlistIds.includes(item.id)}
+              onToggleWishlist={() => void toggleWishlist(item.id)}
             />
           )}
           ListEmptyComponent={

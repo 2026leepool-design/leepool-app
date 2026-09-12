@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect, type Href } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
@@ -399,6 +399,7 @@ function BottomModal<T extends string>({
 export default function LibraryTabScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
+  const { filter } = useLocalSearchParams<{ filter?: string }>();
 
   const [mainBooks, setMainBooks] = useState<Book[]>([]);
   const [listedBooks, setListedBooks] = useState<Book[]>([]);
@@ -410,6 +411,14 @@ export default function LibraryTabScreen() {
   const [sortModalVisible, setSortModalVisible] = useState(false);
   const [aiLoadingId, setAiLoadingId] = useState<string | null>(null);
   const [soldHistoryOpen, setSoldHistoryOpen] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (filter === 'all' || filter === 'reading' || filter === 'for_sale' || filter === 'finished' || filter === 'unread') {
+        setFilterMode(filter);
+      }
+    }, [filter])
+  );
 
   useFocusEffect(
     useCallback(() => {

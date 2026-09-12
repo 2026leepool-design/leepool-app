@@ -6,6 +6,12 @@
  * when strict 12h has no commits) plus v4.0 features staged for this APK.
  */
 export const RELEASE_NOTES_LINES: string[] = [
+  'Release 4.1.3: seven improvements from Linear LEE-32 through LEE-38 are now included.',
+  'Launcher: new round LeePool icon, black bottom navigation, and About LeePool version information in Profile.',
+  'Bitcoin: current mempool block height and sat/vB fee priorities are available beside the currency selector.',
+  'Navigation: dashboard cards open their corresponding library, market, finished, reading, or wishlist view.',
+  'Wishlist: save market books with the heart icon and return to them from the dashboard.',
+  'Android: the release APK is named leepool_v4.1.3.apk.',
   'Dashboard 4.0.6: six clear library indicators for total books, value, sales, finished, reading, and wishlist.',
   'Bookmarks: one progress bar per unfinished book; finished books no longer appear in this view.',
   'Currency display: choose USD, EUR, TRY, BTC, or sats from the dashboard and keep the selection for your next visit.',

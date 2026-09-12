@@ -83,7 +83,7 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0A0F1A',
+          backgroundColor: '#000000',
           borderTopColor: 'rgba(0, 229, 255, 0.15)',
           borderTopWidth: 1,
           height: tabBarHeight,
@@ -104,7 +104,7 @@ export default function TabsLayout() {
           <View
             style={{
               flex: 1,
-              backgroundColor: '#0A0F1A',
+              backgroundColor: '#000000',
               borderTopWidth: 1,
               borderTopColor: 'rgba(0, 229, 255, 0.15)',
             }}
