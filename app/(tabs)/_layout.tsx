@@ -93,12 +93,14 @@ export default function TabsLayout() {
           shadowOpacity: 0,
         },
         tabBarActiveTintColor: '#00E5FF',
-        tabBarInactiveTintColor: '#3A4560',
+        tabBarInactiveTintColor: '#8892B0',
+        tabBarShowLabel: true,
         tabBarLabelStyle: {
           fontFamily: 'SpaceGrotesk_600SemiBold',
           fontSize: 9,
           letterSpacing: 1.2,
           textTransform: 'uppercase',
+          color: '#8892B0',
         },
         tabBarBackground: () => (
           <View
@@ -155,6 +157,18 @@ export default function TabsLayout() {
               />
             </View>
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="wallet"
+        options={{
+          tabBarLabel: t('tabWallet'),
+          tabBarIcon: ({ color, size, focused }) => (
+            <View style={{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: focused ? 'rgba(255, 215, 0, 0.12)' : 'transparent' }}>
+              <Ionicons name={focused ? 'wallet' : 'wallet-outline'} size={size} color={focused ? '#FFD700' : color} />
+            </View>
+          ),
+          tabBarActiveTintColor: '#FFD700',
         }}
       />
       <Tabs.Screen

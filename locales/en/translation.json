@@ -97,6 +97,7 @@
   "noResultsWeb": "No results found on web.",
   "authorBooksFallback": "No exact match. Author's other books:",
   "tabLibrary": "My Library",
+  "tabWallet": "Wallet",
   "tabMarket": "Market",
   "sellBook": "List for Sale",
   "priceSats": "Price - Sats",
@@ -290,5 +291,11 @@
   "selectFoundBook": "Select one of the found books:",
   "startedReading": "Started Reading",
   "finishedReading": "Finished Reading",
-  "notSpecified": "Not specified"
+  "notSpecified": "Not specified",
+  "walletTitle": "WALLET",
+  "walletBalance": "Available balance",
+  "walletRefresh": "Refresh balance",
+  "walletConnectFirst": "Connect a Nostr Wallet Connect wallet from your profile to check its balance.",
+  "walletOpenProfile": "Configure wallet",
+  "walletLastUpdated": "Updated"
 }

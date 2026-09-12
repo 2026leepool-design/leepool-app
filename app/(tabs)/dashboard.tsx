@@ -135,6 +135,7 @@ export default function DashboardScreen() {
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [mempoolFees, setMempoolFees] = useState<MempoolFees>({ blockHeight: null, fastestFee: null, halfHourFee: null, hourFee: null });
   const [mempoolMenuOpen, setMempoolMenuOpen] = useState(false);
+  const [progressCircle, setProgressCircle] = useState(false);
 
   useEffect(() => {
     secureGetItem('leepool_display_currency').then((value) => {
@@ -740,16 +741,22 @@ export default function DashboardScreen() {
                   <Text className="text-[#E2E8F0] text-xs flex-1 mr-2" numberOfLines={1} style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>{book.title}</Text>
                   <Text className="text-[#00E5FF] text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{percent}%</Text>
                 </View>
-                <View className="w-full rounded-full overflow-hidden" style={{ height: 7, backgroundColor: '#0A0F1A' }}>
-                  <View className="rounded-full" style={{ height: 7, width: `${percent}%`, backgroundColor: '#00E5FF' }} />
-                </View>
+                {progressCircle ? (
+                  <View className="items-center justify-center" style={{ width: 48, height: 48, borderRadius: 24, borderWidth: 4, borderColor: '#0A0F1A', borderTopColor: '#00E5FF' }}>
+                    <Text className="text-[#00E5FF] text-[10px]" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{percent}%</Text>
+                  </View>
+                ) : (
+                  <View className="w-full rounded-full overflow-hidden" style={{ height: 7, backgroundColor: '#0A0F1A' }}>
+                    <View className="rounded-full" style={{ height: 7, width: `${percent}%`, backgroundColor: '#00E5FF' }} />
+                  </View>
+                )}
               </View>
             );
           })}
         </View>
 
-        <View className="mb-4 flex-row items-center justify-end gap-2">
-          <View>
+        <View className="mb-4 flex-row items-start justify-end gap-2">
+          <View className="items-end">
           <TouchableOpacity onPress={() => setMempoolMenuOpen((v) => !v)} className="flex-row items-center gap-1 rounded-xl px-3 py-2" style={{ backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(255,170,0,0.3)' }}>
             <Ionicons name="pulse-outline" size={15} color="#FFAA00" />
             <Text className="text-[#FFAA00] text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
@@ -758,7 +765,7 @@ export default function DashboardScreen() {
             <Ionicons name={mempoolMenuOpen ? 'chevron-up' : 'chevron-down'} size={12} color="#8892B0" />
           </TouchableOpacity>
           {mempoolMenuOpen ? (
-            <View className="absolute right-0 top-11 z-20 rounded-xl p-2" style={{ width: 160, backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(255,170,0,0.35)' }}>
+            <View className="rounded-xl p-2 mt-2" style={{ width: 160, backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(255,170,0,0.35)' }}>
               <Text className="text-[#8892B0] text-[10px] mb-1" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>sat/vB</Text>
               <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>Rápida: {mempoolFees.fastestFee ?? '—'}</Text>
               <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>30 min: {mempoolFees.halfHourFee ?? '—'}</Text>
@@ -766,6 +773,10 @@ export default function DashboardScreen() {
             </View>
           ) : null}
           </View>
+          <TouchableOpacity onPress={() => setProgressCircle((v) => !v)} className="flex-row items-center gap-1 rounded-xl px-3 py-2" style={{ backgroundColor: progressCircle ? 'rgba(0,229,255,0.16)' : '#131B2B', borderWidth: 1, borderColor: progressCircle ? '#00E5FF' : 'rgba(0,229,255,0.25)' }}>
+            <Ionicons name="pie-chart-outline" size={15} color="#00E5FF" />
+            <Text className="text-[#00E5FF] text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>%</Text>
+          </TouchableOpacity>
           <View className="relative">
           <TouchableOpacity onPress={() => setCurrencyMenuOpen((v) => !v)} className="flex-row items-center gap-2 rounded-xl px-3 py-2" style={{ backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(0,229,255,0.25)' }}>
             <Ionicons name="cash-outline" size={15} color="#00E5FF" />

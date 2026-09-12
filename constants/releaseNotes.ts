@@ -6,6 +6,14 @@
  * when strict 12h has no commits) plus v4.0 features staged for this APK.
  */
 export const RELEASE_NOTES_LINES: string[] = [
+  'Release 4.2.0: seven improvements from Linear LEE-39 through LEE-45 are now included.',
+  'Navigation: web tab labels are readable and Wallet is available between My Library and Market.',
+  'Wallet: view the connected Nostr Wallet Connect balance directly in the new Wallet tab.',
+  'Market: toggle the Deseados filter next to the LIVE and filters controls.',
+  'Dashboard: switch unfinished-book progress between a linear bar and a circular percentage view.',
+  'Bitcoin: the mempool fee dropdown now expands in the layout without covering dashboard cards.',
+  'Launcher: adaptive Android icon corners are transparent so the round LeePool mark renders cleanly.',
+  'Release 4.1.3: seven improvements from Linear LEE-32 through LEE-38 are now included.',
   'Release 4.1.3: seven improvements from Linear LEE-32 through LEE-38 are now included.',
   'Launcher: new round LeePool icon, black bottom navigation, and About LeePool version information in Profile.',
   'Bitcoin: current mempool block height and sat/vB fee priorities are available beside the currency selector.',

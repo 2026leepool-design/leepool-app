@@ -150,3 +150,73 @@ export async function payInvoiceWithNwc(
     pool.destroy();
   }
 }
+
+/** Returns the connected wallet balance in satoshis (NWC reports millisatoshis). */
+export async function getWalletBalanceWithNwc(): Promise<number> {
+  const connection = await loadNwcConnection();
+  if (!connection) throw new Error('No Nostr Wallet Connect is configured.');
+
+  const clientSecret = connection.secret;
+  const clientPubkey = getPublicKey(clientSecret);
+  const pool = new SimplePool();
+  let responseCloser: { close: () => void } | null = null;
+  const closeResponse = () => responseCloser?.close();
+
+  try {
+    const info = await getWalletInfo(pool, connection);
+    const encryption = getEncryption(connection, info);
+    const conversationKey = encryption === 'nip44_v2'
+      ? nip44.v2.utils.getConversationKey(clientSecret, connection.walletPubkey)
+      : null;
+    const request = JSON.stringify({ method: 'get_balance', params: {} });
+    const encrypted = encryption === 'nip44_v2'
+      ? nip44.v2.encrypt(request, conversationKey!)
+      : await nip04.encrypt(clientSecret, connection.walletPubkey, request);
+    const event = finalizeEvent(
+      {
+        kind: NWC_REQUEST_KIND,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['p', connection.walletPubkey], ['encryption', encryption]],
+        content: encrypted,
+      },
+      clientSecret
+    );
+
+    const response = new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        closeResponse();
+        reject(new Error('The wallet did not respond in time.'));
+      }, 15_000);
+      responseCloser = pool.subscribe(connection.relays, {
+        kinds: [NWC_RESPONSE_KIND],
+        '#p': [clientPubkey],
+        since: event.created_at,
+      }, {
+        onevent: async (received) => {
+          try {
+            const plaintext = encryption === 'nip44_v2'
+              ? nip44.v2.decrypt(received.content, conversationKey!)
+              : await nip04.decrypt(clientSecret, connection.walletPubkey, received.content);
+            const payload = JSON.parse(plaintext) as { result_type?: string; result?: { balance?: number }; error?: { message?: string } };
+            if (payload.error) throw new Error(payload.error.message || 'Wallet balance request failed.');
+            if (payload.result_type !== 'get_balance' || typeof payload.result?.balance !== 'number') {
+              throw new Error('Wallet returned an invalid balance response.');
+            }
+            clearTimeout(timer);
+            closeResponse();
+            resolve(Math.max(0, Math.round(payload.result.balance / 1000)));
+          } catch (error) {
+            clearTimeout(timer);
+            closeResponse();
+            reject(error);
+          }
+        },
+      });
+    });
+    await Promise.all(pool.publish(connection.relays, event));
+    return await response;
+  } finally {
+    closeResponse();
+    pool.destroy();
+  }
+}

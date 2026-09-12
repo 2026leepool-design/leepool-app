@@ -97,6 +97,7 @@
   "noResultsWeb": "Web'de sonuç bulunamadı.",
   "authorBooksFallback": "Tam eşleşme bulunamadı. Yazarın diğer kitapları:",
   "tabLibrary": "Kütüphanem",
+  "tabWallet": "Cüzdan",
   "tabMarket": "Pazar Yeri",
   "sellBook": "Satışa Çıkar",
   "priceSats": "Fiyat - Sats",
@@ -290,5 +291,11 @@
   "selectFoundBook": "Bulunan kitaplardan birini seçin:",
   "startedReading": "Okumaya Başlama",
   "finishedReading": "Okuma Bitiş",
-  "notSpecified": "Belirtilmedi"
+  "notSpecified": "Belirtilmedi",
+  "walletTitle": "CÜZDAN",
+  "walletBalance": "Kullanılabilir bakiye",
+  "walletRefresh": "Bakiyeyi yenile",
+  "walletConnectFirst": "Bakiyeyi görmek için profilinden Nostr Wallet Connect cüzdanı bağla.",
+  "walletOpenProfile": "Cüzdanı yapılandır",
+  "walletLastUpdated": "Güncellendi"
 }

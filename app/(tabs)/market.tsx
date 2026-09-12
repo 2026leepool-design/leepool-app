@@ -352,6 +352,7 @@ export default function MarketTabScreen() {
   const [conditionFilter, setConditionFilter] = useState<ConditionFilter>('all');
   const [sortKey, setSortKey] = useState<MarketSort>('date_desc');
   const [wishlistIds, setWishlistIds] = useState<string[]>([]);
+  const wishlistOnly = filter === 'wishlist';
 
   const displayedBooks = useMemo(() => {
     const filtered = filterMarketBooks(books, {
@@ -361,9 +362,9 @@ export default function MarketTabScreen() {
       authorQ: filterAuthor,
       condition: conditionFilter,
     });
-    const wishlistFiltered = filter === 'wishlist' ? filtered.filter((book) => wishlistIds.includes(book.id)) : filtered;
+    const wishlistFiltered = wishlistOnly ? filtered.filter((book) => wishlistIds.includes(book.id)) : filtered;
     return sortMarketBooks(wishlistFiltered, sortKey);
-  }, [books, priceMin, priceMax, filterTitle, filterAuthor, conditionFilter, sortKey, filter, wishlistIds]);
+  }, [books, priceMin, priceMax, filterTitle, filterAuthor, conditionFilter, sortKey, wishlistOnly, wishlistIds]);
 
   const toggleWishlist = useCallback(async (id: string) => {
     const next = wishlistIds.includes(id) ? wishlistIds.filter((value) => value !== id) : [...wishlistIds, id];
@@ -427,6 +428,14 @@ export default function MarketTabScreen() {
             {filter === 'wishlist' ? t('wishlist') : t('p2pMarket')}
           </Text>
           <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              onPress={() => router.push((wishlistOnly ? '/(tabs)/market' : '/(tabs)/market?filter=wishlist') as Href)}
+              activeOpacity={0.85}
+              className="flex-row items-center gap-1 px-3 py-1.5 rounded-full"
+              style={{ backgroundColor: wishlistOnly ? 'rgba(176, 38, 255, 0.16)' : 'rgba(255, 255, 255, 0.06)', borderWidth: 1, borderColor: wishlistOnly ? 'rgba(176, 38, 255, 0.5)' : 'rgba(255, 255, 255, 0.12)' }}>
+              <Ionicons name={wishlistOnly ? 'heart' : 'heart-outline'} size={13} color={wishlistOnly ? '#B026FF' : '#8892B0'} />
+              <Text className="text-[10px] tracking-widest" style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: wishlistOnly ? '#B026FF' : '#8892B0' }}>{t('wishlist')}</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setFiltersOpen((o) => !o)}
               activeOpacity={0.85}

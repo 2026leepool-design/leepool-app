@@ -97,6 +97,7 @@
   "noResultsWeb": "No se encontraron resultados en la web.",
   "authorBooksFallback": "Sin coincidencia exacta. Otros libros del autor:",
   "tabLibrary": "Mi Biblioteca",
+  "tabWallet": "Billetera",
   "tabMarket": "Mercado",
   "sellBook": "Poner a la Venta",
   "priceSats": "Precio - Sats",
@@ -290,5 +291,11 @@
   "selectFoundBook": "Selecciona uno de los libros encontrados:",
   "startedReading": "Inicio de lectura",
   "finishedReading": "Fin de lectura",
-  "notSpecified": "No especificado"
+  "notSpecified": "No especificado",
+  "walletTitle": "BILLETERA",
+  "walletBalance": "Saldo disponible",
+  "walletRefresh": "Actualizar saldo",
+  "walletConnectFirst": "Conecta una wallet Nostr Wallet Connect desde tu perfil para consultar el saldo.",
+  "walletOpenProfile": "Configurar wallet",
+  "walletLastUpdated": "Actualizado"
 }
