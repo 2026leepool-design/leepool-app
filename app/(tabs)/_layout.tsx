@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { registerForPushNotificationsAsync } from '@/utils/notifications';
 import { supabase } from '@/utils/supabase';
 import { loadKeys } from '@/utils/nostr';
+import { StatusBar } from 'expo-status-bar';
 
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -79,6 +80,8 @@ export default function TabsLayout() {
   }, [sessionUserId, nostrNpub]);
 
   return (
+    <>
+    <StatusBar style="light" backgroundColor="#000000" translucent={false} />
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -220,5 +223,6 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }

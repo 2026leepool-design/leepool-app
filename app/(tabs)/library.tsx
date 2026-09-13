@@ -30,6 +30,7 @@ type Book = {
   current_value: number;
   ia_synopsis: string | null;
   status?: string;
+  availability?: 'owned' | 'lent' | 'gifted' | null;
   cover_url: string | null;
   isbn: string | null;
   is_for_sale: boolean | null;
@@ -42,7 +43,7 @@ type Book = {
   average_rating?: number | null;
 };
 
-type FilterMode = 'all' | 'reading' | 'for_sale' | 'finished' | 'unread';
+type FilterMode = 'all' | 'reading' | 'for_sale' | 'finished' | 'unread' | 'lent' | 'gifted';
 type SortMode = 'date' | 'title_az' | 'author_az' | 'price_high';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -414,7 +415,7 @@ export default function LibraryTabScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (filter === 'all' || filter === 'reading' || filter === 'for_sale' || filter === 'finished' || filter === 'unread') {
+      if (filter === 'all' || filter === 'reading' || filter === 'for_sale' || filter === 'finished' || filter === 'unread' || filter === 'lent' || filter === 'gifted') {
         setFilterMode(filter);
       }
     }, [filter])
@@ -429,7 +430,7 @@ export default function LibraryTabScreen() {
           const { data: { user } } = await supabase.auth.getUser();
           const uid = user?.id;
           const cols =
-            'id, title, author, total_pages, read_pages, current_value, ia_synopsis, status, cover_url, isbn, is_for_sale, sale_status, is_purchased, price_sats, translated_titles, created_at, page_count, average_rating';
+            'id, title, author, total_pages, read_pages, current_value, ia_synopsis, status, availability, cover_url, isbn, is_for_sale, sale_status, is_purchased, price_sats, translated_titles, created_at, page_count, average_rating';
           if (!uid) {
             if (!isMounted) return;
             setMainBooks([]);
@@ -485,6 +486,12 @@ export default function LibraryTabScreen() {
         break;
       case 'unread':
         list = list.filter((b) => (b.read_pages ?? 0) === 0);
+        break;
+      case 'lent':
+        list = list.filter((b) => b.availability === 'lent');
+        break;
+      case 'gifted':
+        list = list.filter((b) => b.availability === 'gifted');
         break;
       default:
         break;
@@ -550,6 +557,8 @@ export default function LibraryTabScreen() {
     { value: 'for_sale', label: t('filterForSale'), icon: 'storefront-outline' },
     { value: 'finished', label: t('filterFinished'), icon: 'checkmark-circle-outline' },
     { value: 'unread', label: t('filterUnread'), icon: 'ellipse-outline' },
+    { value: 'lent', label: t('filterLent'), icon: 'share-social-outline' },
+    { value: 'gifted', label: t('filterGifted'), icon: 'gift-outline' },
   ];
 
   // Sort options

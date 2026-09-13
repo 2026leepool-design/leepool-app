@@ -4,6 +4,7 @@
 
 /** Pazar yeri: not_for_sale | for_sale | sold */
 export type BookSaleStatus = 'not_for_sale' | 'for_sale' | 'sold';
+export type BookAvailability = 'owned' | 'lent' | 'gifted';
 
 export interface Book {
   id: string;
@@ -15,6 +16,7 @@ export interface Book {
   current_value?: number;
   /** Okuma / sahiplik durumu (ör. bought, read) — pazar mantığında kullanılmaz */
   status?: string;
+  availability?: BookAvailability | null;
   sold_to_id?: string | null;
   purchased_from_id?: string | null;
   purchased_from_display?: string | null;

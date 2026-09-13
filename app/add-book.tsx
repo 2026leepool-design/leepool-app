@@ -351,6 +351,7 @@ export default function AddBookScreen() {
           current_value: parseFloat(currentValue) || 0,
           read_pages: 0,
           status: 'bought',
+          availability: 'owned',
           sale_status: 'not_for_sale',
           is_for_sale: false,
           is_app_purchase: false,

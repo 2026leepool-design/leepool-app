@@ -20,6 +20,7 @@ import { supabase } from '@/utils/supabase';
 import { getDefaultLightningWalletFromMetadata } from '@/utils/profileLightning';
 import { generateBookSynopsis } from '@/utils/gemini';
 import { loadKeys, sendEncryptedMessage } from '@/utils/nostr';
+import { sendPushNotification } from '@/utils/sendPush';
 import { hasSentOfferForBook, markOfferSentForBook } from '@/utils/bookOfferTracking';
 import { countUnreadIncomingFromPeer } from '@/utils/nostrDmReadCursor';
 import { buildOfferMessage, generateOfferId } from '@/utils/offerMessages';
@@ -64,6 +65,7 @@ type BookData = {
   purchased_from_id?: string | null;
   purchased_from_display?: string | null;
   is_app_purchase?: boolean | null;
+  availability?: 'owned' | 'lent' | 'gifted' | null;
 };
 
 type ConditionOption = 'new' | 'good' | 'worn';
@@ -96,6 +98,7 @@ export default function BookDetailScreen() {
   const [regenerating, setRegenerating] = useState(false);
   const [coverExpanded, setCoverExpanded] = useState(false);
   const [isForSale, setIsForSale] = useState(false);
+  const [availability, setAvailability] = useState<'owned' | 'lent' | 'gifted'>('owned');
   const [priceSats, setPriceSats] = useState('');
   const [condition, setCondition] = useState<ConditionOption | null>(null);
   const [savingListing, setSavingListing] = useState(false);
@@ -144,7 +147,9 @@ export default function BookDetailScreen() {
             const b = row as BookData;
             setBook(b);
             const listed = bookIsListedForSale(b);
-            setIsForSale(listed);
+            const currentAvailability = b.availability === 'lent' || b.availability === 'gifted' ? b.availability : 'owned';
+            setAvailability(currentAvailability);
+            setIsForSale(currentAvailability === 'owned' && listed);
             setPriceSats(b.price_sats ? String(b.price_sats) : '');
             setCondition((b.condition as ConditionOption) ?? null);
           }
@@ -234,7 +239,8 @@ export default function BookDetailScreen() {
     setSavingListing(true);
     try {
       const keys = await loadKeys();
-      const listingCore = isForSale ? bookListingActivePayload : bookListingCancelledPayload;
+      const canSell = availability === 'owned';
+      const listingCore = isForSale && canSell ? bookListingActivePayload : bookListingCancelledPayload;
       const saleStatus = listingCore.sale_status;
 
       let lightningAddressUpdate: string | null | undefined;
@@ -246,9 +252,10 @@ export default function BookDetailScreen() {
 
       const updatePayload: Record<string, unknown> = {
         ...listingCore,
-        price_sats: isForSale && priceSats.trim() ? parseInt(priceSats, 10) : null,
-        condition: isForSale ? condition : null,
+        price_sats: isForSale && canSell && priceSats.trim() ? parseInt(priceSats, 10) : null,
+        condition: isForSale && canSell ? condition : null,
         seller_npub: keys?.npub ?? null,
+        availability,
       };
       if (lightningAddressUpdate !== undefined) {
         updatePayload.lightning_address = lightningAddressUpdate;
@@ -261,10 +268,11 @@ export default function BookDetailScreen() {
         prev
           ? {
               ...prev,
-              is_for_sale: isForSale,
+              is_for_sale: isForSale && canSell,
               sale_status: saleStatus as BookData['sale_status'],
-              price_sats: isForSale && priceSats.trim() ? parseInt(priceSats, 10) : null,
-              condition: isForSale ? condition : null,
+              availability,
+              price_sats: isForSale && canSell && priceSats.trim() ? parseInt(priceSats, 10) : null,
+              condition: isForSale && canSell ? condition : null,
               seller_npub: keys?.npub ?? null,
               ...(lightningAddressUpdate !== undefined
                 ? { lightning_address: lightningAddressUpdate }
@@ -278,7 +286,7 @@ export default function BookDetailScreen() {
     } finally {
       setSavingListing(false);
     }
-  }, [id, book?.lightning_address, isForSale, priceSats, condition, t]);
+  }, [id, book?.lightning_address, isForSale, availability, priceSats, condition, t]);
 
   const truncateNpub = (npub: string) =>
     npub.length <= 28 ? npub : `${npub.slice(0, 12)}...${npub.slice(-12)}`;
@@ -340,6 +348,7 @@ export default function BookDetailScreen() {
         buyerNpub: keys.npub,
       });
       await sendEncryptedMessage(book.seller_npub, payload);
+      void sendPushNotification(book.seller_npub, t('pushSaleTitle'), t('pushSaleBody'));
       await markOfferSentForBook(id);
       setOfferAlreadySent(true);
       setOfferModalVisible(false);
@@ -713,14 +722,6 @@ export default function BookDetailScreen() {
                   </Text>
                 );
               })()}
-              {book.translator ? (
-                <Text
-                  className="text-[#6B7280] text-[10px]"
-                  style={{ fontFamily: 'SpaceGrotesk_400Regular' }}
-                  numberOfLines={1}>
-                  {t('translator')}: {book.translator}
-                </Text>
-              ) : null}
             </View>
           </View>
         </View>
@@ -1170,6 +1171,31 @@ export default function BookDetailScreen() {
           <View
             className="rounded-2xl p-4 mb-4"
             style={{ backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(0, 255, 157, 0.15)' }}>
+            <Text className="text-[#00FF9D] text-[10px] tracking-widest mb-3" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+              {t('availability').toUpperCase()}
+            </Text>
+            <View className="flex-row gap-2 mb-4">
+              {(['owned', 'lent', 'gifted'] as const).map((option) => {
+                const selected = availability === option;
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    activeOpacity={0.8}
+                    onPress={() => { setAvailability(option); if (option !== 'owned') setIsForSale(false); }}
+                    className="flex-1 rounded-xl py-3 items-center"
+                    style={{ backgroundColor: selected ? 'rgba(0, 255, 157, 0.15)' : '#0A0F1A', borderWidth: 1, borderColor: selected ? '#00FF9D' : 'rgba(136, 146, 176, 0.2)' }}>
+                    <Text className="text-[10px] tracking-widest" style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: selected ? '#00FF9D' : '#8892B0' }}>
+                      {t(`availability${option.charAt(0).toUpperCase() + option.slice(1)}`).toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {availability !== 'owned' ? (
+              <Text className="text-[#FBBF24] text-[10px] leading-4 mb-3" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+                {t('availabilityNoSale')}
+              </Text>
+            ) : null}
             {/* Toggle row */}
             <View className="flex-row items-center justify-between mb-2">
               <View>

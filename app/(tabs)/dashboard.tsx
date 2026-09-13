@@ -8,6 +8,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Alert, Image, Modal, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Notifications from 'expo-notifications';
+import Svg, { Circle } from 'react-native-svg';
 import { BarChart, LineChart } from 'react-native-gifted-charts';
 import { KeyboardWrapper } from '@/components/KeyboardWrapper';
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal';
@@ -25,6 +27,8 @@ type Stats = {
   forSaleCount: number;
   readingCount: number;
   wishlistCount: number;
+  lentCount: number;
+  giftedCount: number;
   unfinishedBooks: { id: string; title: string; readPages: number; totalPages: number }[];
 };
 
@@ -34,6 +38,23 @@ type MempoolFees = {
   halfHourFee: number | null;
   hourFee: number | null;
 };
+
+function ProgressRing({ percent }: { percent: number }) {
+  const size = 52;
+  const stroke = 5;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - Math.max(0, Math.min(100, percent)) / 100);
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke="#0A0F1A" strokeWidth={stroke} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke="#00E5FF" strokeWidth={stroke} strokeLinecap="round" fill="none" strokeDasharray={`${circumference} ${circumference}`} strokeDashoffset={dashOffset} />
+      </Svg>
+      <Text className="text-[#00E5FF] text-[10px]" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{percent}%</Text>
+    </View>
+  );
+}
 
 const LANGUAGES = [
   { code: 'tr', flag: '🇹🇷' },
@@ -125,6 +146,8 @@ export default function DashboardScreen() {
     forSaleCount: 0,
     readingCount: 0,
     wishlistCount: 0,
+    lentCount: 0,
+    giftedCount: 0,
     unfinishedBooks: [],
   });
   const [loading, setLoading] = useState(true);
@@ -136,6 +159,15 @@ export default function DashboardScreen() {
   const [mempoolFees, setMempoolFees] = useState<MempoolFees>({ blockHeight: null, fastestFee: null, halfHourFee: null, hourFee: null });
   const [mempoolMenuOpen, setMempoolMenuOpen] = useState(false);
   const [progressCircle, setProgressCircle] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const received = Notifications.addNotificationReceivedListener(() => {
+      setNotificationCount((count) => Math.min(99, count + 1));
+    });
+    return () => received.remove();
+  }, []);
 
   useEffect(() => {
     secureGetItem('leepool_display_currency').then((value) => {
@@ -281,7 +313,7 @@ export default function DashboardScreen() {
         try {
           const statsQuery = supabase
             .from('books')
-            .select('id, title, current_value, total_pages, read_pages, status, sale_status');
+            .select('id, title, current_value, total_pages, read_pages, status, availability, sale_status');
           if (authUser?.id) statsQuery.eq('user_id', authUser.id);
           const { data, error } = await statsQuery;
           if (error) throw error;
@@ -314,6 +346,8 @@ export default function DashboardScreen() {
             }).length,
             readingCount: rows.filter((b) => !isFinished(b) && (b.status === 'reading' || (b.read_pages ?? 0) > 0)).length,
             wishlistCount: wishlistIds.length,
+            lentCount: rows.filter((b) => b.availability === 'lent').length,
+            giftedCount: rows.filter((b) => b.availability === 'gifted').length,
             unfinishedBooks: rows.filter((b) => !isFinished(b)).map((b) => ({ id: b.id, title: b.title, readPages: b.read_pages ?? 0, totalPages: b.total_pages ?? 0 })),
           });
         } catch (error) {
@@ -537,17 +571,27 @@ export default function DashboardScreen() {
                 <Ionicons name="log-out-outline" size={16} color="#FF003C" />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={() => router.push('/profile')} activeOpacity={0.7}>
-              <Text
-                className="text-[#8892B0] text-[10px] tracking-widest mt-1"
-                style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
-                {userName ? `${t('welcome')}, ${userName}` : t('management')}
-              </Text>
-            </TouchableOpacity>
+            <Text
+              className="text-[#8892B0] text-[10px] tracking-widest mt-1"
+              style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
+              {userName ? `${t('welcome')}, ${userName}` : t('management')}
+            </Text>
           </View>
           <View className="flex-row gap-2 items-center">
             <TouchableOpacity onPress={() => setLanguageMenuOpen((v) => !v)} className="w-9 h-9 rounded-xl items-center justify-center border" style={{ backgroundColor: '#131B2B', borderColor: languageMenuOpen ? '#00E5FF' : 'rgba(136, 146, 176, 0.2)' }}>
               <Ionicons name="globe-outline" size={18} color="#00E5FF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { setNotificationCount(0); router.push('/(tabs)/messages'); }}
+              className="w-9 h-9 rounded-xl items-center justify-center border"
+              style={{ backgroundColor: '#131B2B', borderColor: 'rgba(168, 85, 247, 0.35)' }}
+              accessibilityLabel={t('notifications')}>
+              <Ionicons name="notifications-outline" size={18} color="#A855F7" />
+              {notificationCount > 0 ? (
+                <View className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full items-center justify-center" style={{ backgroundColor: '#EF4444', borderWidth: 1, borderColor: '#0A0F1A' }}>
+                  <Text className="text-white text-[9px]" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{notificationCount > 9 ? '9+' : String(notificationCount)}</Text>
+                </View>
+              ) : null}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push('/profile')} className="w-9 h-9 rounded-xl items-center justify-center border" style={{ backgroundColor: '#131B2B', borderColor: 'rgba(136, 146, 176, 0.2)' }}>
               <Ionicons name="settings-outline" size={18} color="#8892B0" />
@@ -742,9 +786,7 @@ export default function DashboardScreen() {
                   <Text className="text-[#00E5FF] text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{percent}%</Text>
                 </View>
                 {progressCircle ? (
-                  <View className="items-center justify-center" style={{ width: 48, height: 48, borderRadius: 24, borderWidth: 4, borderColor: '#0A0F1A', borderTopColor: '#00E5FF' }}>
-                    <Text className="text-[#00E5FF] text-[10px]" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{percent}%</Text>
-                  </View>
+                  <ProgressRing percent={percent} />
                 ) : (
                   <View className="w-full rounded-full overflow-hidden" style={{ height: 7, backgroundColor: '#0A0F1A' }}>
                     <View className="rounded-full" style={{ height: 7, width: `${percent}%`, backgroundColor: '#00E5FF' }} />
@@ -840,6 +882,10 @@ export default function DashboardScreen() {
             <View className="flex-row gap-3 mb-5">
               <StatCard label={t('reading')} value={String(stats.readingCount)} accent="#F59E0B" icon="book-outline" onPress={() => router.push('/(tabs)/library?filter=reading')} />
               <StatCard label={t('wishlist')} value={String(stats.wishlistCount)} accent="#B026FF" icon="heart-outline" onPress={() => router.push('/(tabs)/market?filter=wishlist')} />
+            </View>
+            <View className="flex-row gap-3 mb-5">
+              <StatCard label={t('filterLent')} value={String(stats.lentCount)} accent="#60A5FA" icon="share-social-outline" onPress={() => router.push('/(tabs)/library?filter=lent')} />
+              <StatCard label={t('filterGifted')} value={String(stats.giftedCount)} accent="#F472B6" icon="gift-outline" onPress={() => router.push('/(tabs)/library?filter=gifted')} />
             </View>
           </>
         )}

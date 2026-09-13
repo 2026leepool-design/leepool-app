@@ -6,6 +6,16 @@
  * when strict 12h has no commits) plus v4.0 features staged for this APK.
  */
 export const RELEASE_NOTES_LINES: string[] = [
+  'Release 4.3.0: ten improvements from Linear LEE-30 and LEE-46 through LEE-54 are being prepared.',
+  'Library: track lent and gifted books, filter them, and prevent unavailable books from being listed for sale.',
+  'Dashboard: new Prestados and Regalados summary cards link directly to their library filters.',
+  'Market: the wishlist control now uses only the heart icon.',
+  'Reading: circular progress renders consistently when switching back and forth from the linear bar.',
+  'Books: removed the translator field from book details and editing.',
+  'Notifications: added a bell shortcut and push delivery for messages and P2P offers.',
+  'Android: the system navigation bar is forced to dark mode.',
+  'Welcome: the profile shortcut was removed from the welcome message.',
+  'IA Sync: the Gemini Supabase Edge Function is deployed and ready for the encrypted project secret.',
   'Release 4.2.0: seven improvements from Linear LEE-39 through LEE-45 are now included.',
   'Navigation: web tab labels are readable and Wallet is available between My Library and Market.',
   'Wallet: view the connected Nostr Wallet Connect balance directly in the new Wallet tab.',

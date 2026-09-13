@@ -1080,27 +1080,6 @@ export default function EditBookScreen() {
             </View>
           </View>
 
-          <View className="mb-4">
-            <Text
-              className="text-[#8892B0] text-[10px] mb-2 tracking-widest"
-              style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              {t('translator')}
-            </Text>
-            <View className="flex-row items-center">
-              <TextInput
-                className="flex-1 rounded-xl px-4 py-3 text-white text-base"
-                style={inputStyle('translator')}
-                placeholderTextColor="#4A5568"
-                value={translator}
-                onChangeText={setTranslator}
-                onFocus={() => setFocusField('translator')}
-                onBlur={() => setFocusField(null)}
-                keyboardType="default"
-              />
-              <RollbackButton field="translator" />
-            </View>
-          </View>
-
           <View>
             <Text
               className="text-[#8892B0] text-[10px] mb-2 tracking-widest"

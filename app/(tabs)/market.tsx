@@ -431,10 +431,10 @@ export default function MarketTabScreen() {
             <TouchableOpacity
               onPress={() => router.push((wishlistOnly ? '/(tabs)/market' : '/(tabs)/market?filter=wishlist') as Href)}
               activeOpacity={0.85}
-              className="flex-row items-center gap-1 px-3 py-1.5 rounded-full"
+              className="w-9 h-9 items-center justify-center rounded-full"
+              accessibilityLabel={t('wishlist')}
               style={{ backgroundColor: wishlistOnly ? 'rgba(176, 38, 255, 0.16)' : 'rgba(255, 255, 255, 0.06)', borderWidth: 1, borderColor: wishlistOnly ? 'rgba(176, 38, 255, 0.5)' : 'rgba(255, 255, 255, 0.12)' }}>
-              <Ionicons name={wishlistOnly ? 'heart' : 'heart-outline'} size={13} color={wishlistOnly ? '#B026FF' : '#8892B0'} />
-              <Text className="text-[10px] tracking-widest" style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: wishlistOnly ? '#B026FF' : '#8892B0' }}>{t('wishlist')}</Text>
+              <Ionicons name={wishlistOnly ? 'heart' : 'heart-outline'} size={17} color={wishlistOnly ? '#B026FF' : '#8892B0'} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setFiltersOpen((o) => !o)}

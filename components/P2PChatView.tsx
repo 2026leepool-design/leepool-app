@@ -21,6 +21,7 @@ import * as nip04 from 'nostr-tools/nip04';
 import * as nip19 from 'nostr-tools/nip19';
 import { loadKeys, sendEncryptedMessage, RELAYS } from '@/utils/nostr';
 import { supabase } from '@/utils/supabase';
+import { sendPushNotification } from '@/utils/sendPush';
 import { payLightningInvoice } from '@/utils/lightning';
 import { loadNwcConnection, payInvoiceWithNwc } from '@/utils/nwc';
 import {
@@ -394,6 +395,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
 
       try {
         await sendEncryptedMessage(peerNpubTrimmed, payload);
+        void sendPushNotification(peerNpubTrimmed, t('pushNewMessageTitle'), t('pushNewMessageBody'));
       } catch {
         setMessages((prev) => prev.filter((m) => m.id !== optId));
         const msg = t('locationShareError');
@@ -434,13 +436,14 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
 
     try {
       await sendEncryptedMessage(peerNpubTrimmed, text);
+      void sendPushNotification(peerNpubTrimmed, t('pushNewMessageTitle'), t('pushNewMessageBody'));
     } catch {
       setInputText(text);
       setMessages((prev) => prev.filter((m) => m.id !== optId));
     } finally {
       setSending(false);
     }
-  }, [inputText, peerNpubTrimmed, sending]);
+  }, [inputText, peerNpubTrimmed, sending, t]);
 
   const handleAcceptOffer = useCallback(
     async (offer: OfferPendingMessage) => {
@@ -454,6 +457,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
           buyerNpub: offer.buyerNpub,
         };
         await sendEncryptedMessage(peerNpubTrimmed, buildOfferAcceptedMessage(payload));
+        void sendPushNotification(peerNpubTrimmed, t('pushSaleTitle'), t('pushSaleBody'));
         addLocalTerminalOffer(offer.offerId);
       } catch (e) {
         Alert.alert(t('error'), e instanceof Error ? e.message : String(e));
@@ -473,6 +477,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
             offerId: offer.offerId,
           })
         );
+        void sendPushNotification(peerNpubTrimmed, t('pushNewMessageTitle'), t('pushNewMessageBody'));
         addLocalTerminalOffer(offer.offerId);
       } catch (e) {
         Alert.alert(t('error'), e instanceof Error ? e.message : String(e));
@@ -543,6 +548,7 @@ export function P2PChatView({ peerNpub }: P2PChatViewProps) {
             offerId: accepted.offerId,
           })
         );
+        void sendPushNotification(peerNpubTrimmed, t('pushNewMessageTitle'), t('pushNewMessageBody'));
         addLocalTerminalOffer(accepted.offerId);
       } catch (e) {
         Alert.alert(t('error'), e instanceof Error ? e.message : String(e));
