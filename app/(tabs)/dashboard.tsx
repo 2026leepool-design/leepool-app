@@ -37,6 +37,7 @@ type MempoolFees = {
   fastestFee: number | null;
   halfHourFee: number | null;
   hourFee: number | null;
+  hashrate: number | null;
 };
 
 function ProgressRing({ percent }: { percent: number }) {
@@ -60,6 +61,7 @@ const LANGUAGES = [
   { code: 'tr', flag: '🇹🇷' },
   { code: 'en', flag: '🇺🇸' },
   { code: 'es', flag: '🇪🇸' },
+  { code: 'ru', flag: '🇷🇺' },
 ];
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
@@ -156,7 +158,7 @@ export default function DashboardScreen() {
   const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('USD');
   const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
-  const [mempoolFees, setMempoolFees] = useState<MempoolFees>({ blockHeight: null, fastestFee: null, halfHourFee: null, hourFee: null });
+  const [mempoolFees, setMempoolFees] = useState<MempoolFees>({ blockHeight: null, fastestFee: null, halfHourFee: null, hourFee: null, hashrate: null });
   const [mempoolMenuOpen, setMempoolMenuOpen] = useState(false);
   const [progressCircle, setProgressCircle] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
@@ -171,7 +173,7 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     secureGetItem('leepool_display_currency').then((value) => {
-      if (value && ['USD', 'EUR', 'TRY', 'BTC', 'SATS'].includes(value)) setDisplayCurrency(value as DisplayCurrency);
+      if (value && ['USD', 'EUR', 'TRY', 'RUB', 'BTC', 'SATS'].includes(value)) setDisplayCurrency(value as DisplayCurrency);
     });
   }, []);
 
@@ -180,14 +182,17 @@ export default function DashboardScreen() {
     Promise.all([
       fetch('https://mempool.space/api/blocks/tip/height').then((r) => r.ok ? r.text() : null),
       fetch('https://mempool.space/api/v1/fees/recommended').then((r) => r.ok ? r.json() : null),
-    ]).then(([height, fees]) => {
+      fetch('https://mempool.space/api/v1/mining/hashrate/3d').then((r) => r.ok ? r.json() : null),
+    ]).then(([height, fees, hashrateData]) => {
       if (cancelled) return;
       const value = fees as { fastestFee?: number; halfHourFee?: number; hourFee?: number } | null;
+      const hashrateValue = hashrateData as { currentHashrate?: number; hashrate?: number } | null;
       setMempoolFees({
         blockHeight: height ? Number(height) : null,
         fastestFee: value?.fastestFee ?? null,
         halfHourFee: value?.halfHourFee ?? null,
         hourFee: value?.hourFee ?? null,
+        hashrate: hashrateValue?.currentHashrate ?? hashrateValue?.hashrate ?? null,
       });
     }).catch(() => undefined);
     return () => { cancelled = true; };
@@ -277,30 +282,35 @@ export default function DashboardScreen() {
     return months;
   }
 
-  const getValueData = () => {
-    switch (valueTimeRange) {
-      case '1W': return [
-        { value: 120, label: t('dayMon') }, { value: 125, label: t('dayTue') }, { value: 122, label: t('dayWed') },
-        { value: 130, label: t('dayThu') }, { value: 133, label: t('dayFri') }, { value: 135, label: t('daySat') }, { value: 138, label: t('daySun') },
-      ];
-      case '1M': return [
-        { value: 100, label: `1. ${t('weekAbbr')}` }, { value: 115, label: `2. ${t('weekAbbr')}` }, { value: 125, label: `3. ${t('weekAbbr')}` }, { value: 133, label: `4. ${t('weekAbbr')}` },
-      ];
-      case '3M': return [
-        { value: 90, label: t('monthJan') }, { value: 110, label: t('monthFeb') }, { value: 133, label: t('monthMar') },
-      ];
-      case '6M': return [
-        { value: 70, label: t('monthOct') }, { value: 85, label: t('monthNov') }, { value: 90, label: t('monthDec') },
-        { value: 105, label: t('monthJan') }, { value: 120, label: t('monthFeb') }, { value: 133, label: t('monthMar') },
-      ];
-      case '1Y': return [
-        { value: 50, label: '2025' }, { value: 80, label: t('monthJun') }, { value: 110, label: t('monthSep') }, { value: 133, label: '2026' },
-      ];
-      default: return [];
-    }
-  };
+  type ValueLog = { book_id: string; value: number; recorded_at: string };
+  const [allValueHistory, setAllValueHistory] = useState<ValueLog[]>([]);
 
-  const currentValueData = getValueData();
+  function groupValueHistory(logs: ValueLog[], range: string, fallback: number): ChartPoint[] {
+    const now = new Date();
+    const count = range === '1W' ? 7 : range === '1M' ? 4 : range === '3M' ? 3 : range === '6M' ? 6 : 12;
+    const points: ChartPoint[] = [];
+    for (let i = count - 1; i >= 0; i--) {
+      const end = new Date(now);
+      if (range === '1W') end.setDate(now.getDate() - i);
+      else if (range === '1M') end.setDate(now.getDate() - i * 7);
+      else end.setMonth(now.getMonth() - i);
+      const latest = new Map<string, { at: number; value: number }>();
+      for (const log of logs) {
+        const at = new Date(log.recorded_at).getTime();
+        if (at <= end.getTime() && (!latest.has(log.book_id) || at > latest.get(log.book_id)!.at)) {
+          latest.set(log.book_id, { at, value: Number(log.value) || 0 });
+        }
+      }
+      let label = '';
+      if (range === '1W') label = t(DAYS_KEYS[end.getDay()]);
+      else if (range === '1M') label = `${count - i}. ${t('weekAbbr')}`;
+      else label = range === '1Y' && i % 3 !== 0 ? '' : t(MONTHS_KEYS[end.getMonth()]);
+      points.push({ value: latest.size ? Array.from(latest.values()).reduce((sum, item) => sum + item.value, 0) : fallback, label });
+    }
+    return points;
+  }
+
+  const currentValueData = groupValueHistory(allValueHistory, valueTimeRange, stats.totalValue);
   const currentReadData = groupReadingLogs(allReadingLogs, readTimeRange);
   const totalReadInRange = currentReadData.reduce((acc, curr) => acc + curr.value, 0);
 
@@ -319,6 +329,16 @@ export default function DashboardScreen() {
           if (error) throw error;
           if (!isMounted) return;
           const rows = data ?? [];
+          if (authUser?.id) {
+            const { data: history } = await supabase
+              .from('book_value_history')
+              .select('book_id, value, recorded_at')
+              .eq('user_id', authUser.id)
+              .order('recorded_at', { ascending: true });
+            if (isMounted) setAllValueHistory((history ?? []) as ValueLog[]);
+          } else {
+            setAllValueHistory([]);
+          }
           const wishlistRaw = await secureGetItem('leepool_wishlist_ids');
           let wishlistIds: string[] = [];
           if (wishlistRaw) {
@@ -527,6 +547,7 @@ export default function DashboardScreen() {
     if (!btcRates) return '—';
     if (displayCurrency === 'EUR') return (val * btcRates.eur / btcRates.usd).toLocaleString(undefined, { style: 'currency', currency: 'EUR' });
     if (displayCurrency === 'TRY') return (val * (btcRates.try ?? 0) / btcRates.usd).toLocaleString(undefined, { style: 'currency', currency: 'TRY' });
+    if (displayCurrency === 'RUB') return (val * (btcRates.rub ?? 0) / btcRates.usd).toLocaleString(undefined, { style: 'currency', currency: 'RUB' });
     if (displayCurrency === 'BTC') return `${(val / btcRates.usd).toFixed(8)} BTC`;
     return `${Math.round((val / btcRates.usd) * 100_000_000).toLocaleString()} sats`;
   };
@@ -812,6 +833,7 @@ export default function DashboardScreen() {
               <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>Rápida: {mempoolFees.fastestFee ?? '—'}</Text>
               <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>30 min: {mempoolFees.halfHourFee ?? '—'}</Text>
               <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>1 h: {mempoolFees.hourFee ?? '—'}</Text>
+              <Text className="text-white text-xs mt-1" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>{t('hashrate')}: {mempoolFees.hashrate ? `${(mempoolFees.hashrate / 1e18).toFixed(2)} EH/s` : '—'}</Text>
             </View>
           ) : null}
           </View>
@@ -827,7 +849,7 @@ export default function DashboardScreen() {
           </TouchableOpacity>
           {currencyMenuOpen ? (
             <View className="self-end flex-row flex-wrap justify-end gap-2 mt-2">
-              {(['USD', 'EUR', 'TRY', 'BTC', 'SATS'] as DisplayCurrency[]).map((currency) => (
+              {(['USD', 'EUR', 'TRY', 'RUB', 'BTC', 'SATS'] as DisplayCurrency[]).map((currency) => (
                 <TouchableOpacity key={currency} onPress={() => changeCurrency(currency)} className="rounded-lg px-3 py-2" style={{ backgroundColor: displayCurrency === currency ? 'rgba(0,229,255,0.18)' : '#131B2B', borderWidth: 1, borderColor: displayCurrency === currency ? '#00E5FF' : 'rgba(136,146,176,0.2)' }}>
                   <Text className="text-xs" style={{ color: displayCurrency === currency ? '#00E5FF' : '#8892B0', fontFamily: 'SpaceGrotesk_600SemiBold' }}>{currency}</Text>
                 </TouchableOpacity>

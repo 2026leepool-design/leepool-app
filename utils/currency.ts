@@ -2,23 +2,25 @@ export type BtcRates = {
   usd: number;
   eur: number;
   try?: number;
+  rub?: number;
 };
 
-export type DisplayCurrency = 'USD' | 'EUR' | 'TRY' | 'BTC' | 'SATS';
+export type DisplayCurrency = 'USD' | 'EUR' | 'TRY' | 'RUB' | 'BTC' | 'SATS';
 
 export async function fetchBitcoinRates(): Promise<BtcRates | null> {
   try {
     const response = await fetch(
-      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,eur,try',
+      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,eur,try,rub',
       { headers: { Accept: 'application/json' } }
     );
     if (!response.ok) return null;
-    const json = (await response.json()) as { bitcoin?: { usd?: number; eur?: number; try?: number } };
+    const json = (await response.json()) as { bitcoin?: { usd?: number; eur?: number; try?: number; rub?: number } };
     const usd = json?.bitcoin?.usd;
     const eur = json?.bitcoin?.eur;
     const tryRate = json?.bitcoin?.try;
-    if (!usd || !eur || !tryRate) return null;
-    return { usd, eur, try: tryRate };
+    const rub = json?.bitcoin?.rub;
+    if (!usd || !eur || !tryRate || !rub) return null;
+    return { usd, eur, try: tryRate, rub };
   } catch {
     return null;
   }
@@ -44,7 +46,7 @@ export function satsToTry(sats: number, rates: BtcRates | null): number | null {
 export function formatSatsValue(sats: number, currency: DisplayCurrency, rates: BtcRates | null): string {
   if (currency === 'SATS') return `${Math.round(sats).toLocaleString()} sats`;
   if (currency === 'BTC') return `${(sats / 100_000_000).toFixed(8)} BTC`;
-  const rate = currency === 'USD' ? rates?.usd : currency === 'EUR' ? rates?.eur : rates?.try;
+  const rate = currency === 'USD' ? rates?.usd : currency === 'EUR' ? rates?.eur : currency === 'TRY' ? rates?.try : rates?.rub;
   if (!rate) return '—';
   return ((sats / 100_000_000) * rate).toLocaleString(undefined, { style: 'currency', currency });
 }

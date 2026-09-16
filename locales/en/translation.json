@@ -91,6 +91,8 @@
   "analyzingCover": "Analyzing cover...",
   "aiScanSuccess": "AI auto-filled the info!",
   "translator": "Translator",
+  "publisher": "Publisher",
+  "hashrate": "Hashrate",
   "firstPublishYear": "First Publish Year",
   "searchFromWeb": "Search from Web",
   "coverFoundApplied": "Cover found and applied",

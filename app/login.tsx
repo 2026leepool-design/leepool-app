@@ -211,13 +211,14 @@ export default function LoginScreen() {
             shadowOpacity: 0.45,
             shadowRadius: 22,
             elevation: 8,
-            overflow: 'hidden',
           }}>
-          <Image
-            source={require('../assets/images/android-icon-foreground.png')}
-            style={{ width: 88, height: 88 }}
-            resizeMode="cover"
-          />
+          <View style={{ width: 68, height: 68, borderRadius: 18, overflow: 'hidden' }}>
+            <Image
+              source={require('../assets/images/android-icon-foreground.png')}
+              style={{ width: 68, height: 68 }}
+              resizeMode="cover"
+            />
+          </View>
         </TouchableOpacity>
         <Text
           style={{

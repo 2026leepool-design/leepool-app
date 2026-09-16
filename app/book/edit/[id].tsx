@@ -60,6 +60,7 @@ type BookData = {
   ratings_count?: number | null;
   maturity_rating?: string | null;
   language?: string | null;
+  publisher?: string | null;
   subjects?: string[] | null;
 };
 
@@ -91,6 +92,7 @@ export default function EditBookScreen() {
   const [translator, setTranslator] = useState('');
   const [firstPublishYear, setFirstPublishYear] = useState('');
   const [pageCountMeta, setPageCountMeta] = useState('');
+  const [publisher, setPublisher] = useState('');
   const [language, setLanguage] = useState('');
   const [categoriesCsv, setCategoriesCsv] = useState('');
   const [translatedTitles, setTranslatedTitles] = useState<string>('');
@@ -109,6 +111,7 @@ export default function EditBookScreen() {
     totalPages: string;
     firstPublishYear: string;
     pageCountMeta: string;
+    publisher: string;
     language: string;
     categoriesCsv: string;
     translator: string;
@@ -146,6 +149,7 @@ export default function EditBookScreen() {
           const pcm =
             b.page_count != null && b.page_count > 0 ? String(b.page_count) : '';
           const lang = b.language?.trim() ?? '';
+          const pub = b.publisher?.trim() ?? '';
           const csv = arrayToCommaSeparated(parseStringArrayField(b.categories));
           const trn = b.translator ?? '';
           const ttl = b.translated_titles ? JSON.stringify(b.translated_titles) : '';
@@ -168,6 +172,7 @@ export default function EditBookScreen() {
           setTranslator(trn);
           setFirstPublishYear(fpy);
           setPageCountMeta(pcm);
+          setPublisher(pub);
           setLanguage(lang);
           setCategoriesCsv(csv);
           setTranslatedTitles(ttl);
@@ -184,6 +189,7 @@ export default function EditBookScreen() {
             totalPages: tot,
             firstPublishYear: fpy,
             pageCountMeta: pcm,
+            publisher: pub,
             language: lang,
             categoriesCsv: csv,
             translator: trn,
@@ -457,6 +463,7 @@ export default function EditBookScreen() {
         reading_finished_at: readingFinishedAt ? readingFinishedAt.toISOString() : null,
         isbn: isbn.trim() || null,
         translator: translator.trim() || null,
+        publisher: publisher.trim() || null,
         first_publish_year: year && !isNaN(year) ? year : null,
         page_count,
         categories: cats.length ? cats : null,
@@ -507,6 +514,7 @@ export default function EditBookScreen() {
     translator,
     firstPublishYear,
     pageCountMeta,
+    publisher,
     language,
     categoriesCsv,
     averageRating,
@@ -532,6 +540,7 @@ export default function EditBookScreen() {
       case 'totalPages': setTotalPages(initial.totalPages); break;
       case 'firstPublishYear': setFirstPublishYear(initial.firstPublishYear); break;
       case 'pageCountMeta': setPageCountMeta(initial.pageCountMeta); break;
+      case 'publisher': setPublisher(initial.publisher); break;
       case 'language': setLanguage(initial.language); break;
       case 'categoriesCsv': setCategoriesCsv(initial.categoriesCsv); break;
       case 'translator': setTranslator(initial.translator); break;
@@ -1020,20 +1029,20 @@ export default function EditBookScreen() {
             <Text
               className="text-[#8892B0] text-[10px] mb-2 tracking-widest"
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              {t('metadataPageCount')}
+              {t('publisher')}
             </Text>
             <View className="flex-row items-center">
               <TextInput
                 className="flex-1 rounded-xl px-4 py-3 text-white text-base"
-                style={inputStyle('pageCountMeta')}
+                style={inputStyle('publisher')}
                 placeholderTextColor="#4A5568"
-                value={pageCountMeta}
-                onChangeText={(txt) => setPageCountMeta(digitsOnly(txt))}
-                onFocus={() => setFocusField('pageCountMeta')}
+                value={publisher}
+                onChangeText={setPublisher}
+                onFocus={() => setFocusField('publisher')}
                 onBlur={() => setFocusField(null)}
-                keyboardType="numeric"
+                keyboardType="default"
               />
-              <RollbackButton field="pageCountMeta" />
+              <RollbackButton field="publisher" />
             </View>
           </View>
 

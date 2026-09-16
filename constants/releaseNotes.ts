@@ -6,6 +6,11 @@
  * when strict 12h has no commits) plus v4.0 features staged for this APK.
  */
 export const RELEASE_NOTES_LINES: string[] = [
+  'Release 4.3.5: five improvements from Linear LEE-55 through LEE-59 are now included.',
+  'Books: replaced the duplicate metadata page field with Publisher and removed the translator field from adding books.',
+  'Dashboard: the library value chart now uses real book value history from Supabase.',
+  'Bitcoin: added current network hashrate in EH/s and RUB as a display currency.',
+  'Welcome: corrected the LeePool medallion so the blue mark stays inside its rounded square.',
   'Release 4.3.0: ten improvements from Linear LEE-30 and LEE-46 through LEE-54 are being prepared.',
   'Library: track lent and gifted books, filter them, and prevent unavailable books from being listed for sale.',
   'Dashboard: new Prestados and Regalados summary cards link directly to their library filters.',

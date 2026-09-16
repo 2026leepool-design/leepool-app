@@ -52,7 +52,7 @@ export default function AddBookScreen() {
   const [totalPages, setTotalPages] = useState('');
   const [isbn, setIsbn] = useState('');
   const [firstPublishYear, setFirstPublishYear] = useState('');
-  const [translator, setTranslator] = useState('');
+  const [publisher, setPublisher] = useState('');
   const [translatedTitles, setTranslatedTitles] = useState<string>('');
   const [currentValue, setCurrentValue] = useState('');
   const [lightningAddress, setLightningAddress] = useState('');
@@ -76,8 +76,6 @@ export default function AddBookScreen() {
   const [isSearchResultModalVisible, setIsSearchResultModalVisible] = useState(false);
   const scanProcessed = useRef(false);
   const paramsApplied = useRef(false);
-
-  const digitsOnly = useCallback((text: string) => text.replace(/[^0-9]/g, ''), []);
 
   useEffect(() => {
     if (paramsApplied.current) return;
@@ -126,7 +124,6 @@ export default function AddBookScreen() {
       setMaturityRating(result.maturity_rating.trim());
       updates.maturityRating = true;
     }
-    if (result.translator) { setTranslator(result.translator); updates.translator = true; }
     if (result.cover_url) { setCoverUrl(result.cover_url); updates.coverUrl = true; }
     if (result.original_title) {
       setTranslatedTitles(JSON.stringify([{ lang: 'orj', title: result.original_title, isOriginal: true }]));
@@ -346,7 +343,7 @@ export default function AddBookScreen() {
           total_pages: pages,
           isbn: isbn.trim() || null,
           first_publish_year: year && !isNaN(year) ? year : null,
-          translator: translator.trim() || null,
+          publisher: publisher.trim() || null,
           translated_titles: parsedTitles,
           current_value: parseFloat(currentValue) || 0,
           read_pages: 0,
@@ -388,7 +385,7 @@ export default function AddBookScreen() {
     averageRatingInput,
     ratingsCount,
     maturityRating,
-    translator,
+    publisher,
     translatedTitles,
     currentValue,
     lightningAddress,
@@ -711,23 +708,23 @@ export default function AddBookScreen() {
           </View>
         </View>
 
-        {/* Page count (metadata) + average rating */}
+        {/* Publisher + average rating. Page count metadata is kept internally for ISBN results. */}
         <View className="flex-row gap-3 mb-5">
           <View className="flex-1">
             <Text
               className="text-[#8892B0] text-xs mb-2 tracking-widest"
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-              {t('metadataPageCount')}
+              {t('publisher')}
             </Text>
             <TextInput
               className="rounded-xl px-4 py-4 text-white text-base"
-              style={inputStyle('pageCountMeta')}
+              style={inputStyle('publisher')}
               placeholderTextColor="#4A5568"
-              value={pageCountMeta}
-              onChangeText={(txt) => setPageCountMeta(digitsOnly(txt))}
-              onFocus={() => setFocusField('pageCountMeta')}
+              value={publisher}
+              onChangeText={setPublisher}
+              onFocus={() => setFocusField('publisher')}
               onBlur={() => setFocusField(null)}
-              keyboardType="numeric"
+              keyboardType="default"
             />
           </View>
           <View className="flex-1">
@@ -767,25 +764,6 @@ export default function AddBookScreen() {
             onFocus={() => setFocusField('language')}
             onBlur={() => setFocusField(null)}
             autoCapitalize="none"
-          />
-        </View>
-
-        {/* Translator */}
-        <View className="mb-5">
-          <Text
-            className="text-[#8892B0] text-xs mb-2 tracking-widest"
-            style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
-            {t('translator')}
-          </Text>
-          <TextInput
-            className="rounded-xl px-4 py-4 text-white text-base"
-            style={inputStyle('translator')}
-            placeholderTextColor="#4A5568"
-            value={translator}
-            onChangeText={setTranslator}
-            onFocus={() => setFocusField('translator')}
-            onBlur={() => setFocusField(null)}
-            keyboardType="default"
           />
         </View>
 

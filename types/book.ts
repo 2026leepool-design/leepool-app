@@ -24,6 +24,7 @@ export interface Book {
   cover_url: string | null;
   isbn?: string | null;
   translator?: string | null;
+  publisher?: string | null;
   first_publish_year?: number | null;
   translated_titles?: unknown;
   ia_synopsis?: string | null;
