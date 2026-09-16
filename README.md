@@ -6,16 +6,16 @@ La aplicación combina seguimiento de lectura, progreso por páginas, biblioteca
 
 ## Última versión
 
-**Versión:** `4.3.5`
+**Versión:** `4.3.8`
 **Estado:** última versión publicada
 **Plataformas:** web y Android
 
 | Plataforma | Acceso | Estado |
 | --- | --- | --- |
-| Web | [Vercel](https://leepool.vercel.app/) · [Netlify](https://myleepool.netlify.app/) | 4.3.5 |
-| Android APK | [Instalar LeePool 4.3.5 en Android](https://expo.dev/accounts/leepool/projects/LeePool/builds/f6c0737b-ddcf-4408-8d63-dfabb16d988b) | Generada y lista |
+| Web | [Vercel](https://leepool.vercel.app/) · [Netlify](https://myleepool.netlify.app/) | 4.3.8 |
+| Android APK | [Instalar LeePool 4.3.8 en Android](https://expo.dev/accounts/leepool/projects/LeePool/builds/a288ac4e-856e-4e06-923a-27ddda576e47) | Generada y lista |
 
-> La versión más reciente es la 4.3.5. La APK está disponible desde Expo para instalación interna en Android.
+> La versión más reciente es la 4.3.8. La APK está disponible desde Expo para instalación interna en Android.
 
 ## Funcionalidades principales
 
