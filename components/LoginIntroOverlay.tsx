@@ -1,9 +1,7 @@
 import { useEffect, useRef } from 'react';
 import {
-  View,
   Animated,
   Dimensions,
-  Image,
   Easing,
   StyleSheet,
 } from 'react-native';
@@ -12,6 +10,7 @@ import {
   InterruptionModeAndroid,
   InterruptionModeIOS,
 } from 'expo-av';
+import { LeePoolMedallion } from './LeePoolMedallion';
 
 /** Orijinal hızın %50’si = yarı hız */
 const BOOKPAGE_PLAYBACK_RATE = 0.5;
@@ -212,13 +211,7 @@ export function LoginIntroOverlay({ onFinished }: Props) {
               { rotateY: spinY },
             ],
           }}>
-          <View style={styles.logoFrame}>
-            <Image
-              source={require('../assets/images/android-icon-foreground.png')}
-              style={styles.logoImg}
-              resizeMode="cover"
-            />
-          </View>
+          <LeePoolMedallion size={LOGO} radius={28} style={styles.logoFrame} />
         </Animated.View>
       </Animated.View>
     </Animated.View>
@@ -239,9 +232,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoFrame: {
-    width: LOGO,
-    height: LOGO,
-    borderRadius: 28,
     backgroundColor: 'rgba(0, 229, 255, 0.08)',
     borderWidth: 1,
     borderColor: '#00E5FF',
@@ -251,9 +241,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 24,
     elevation: 16,
-  },
-  logoImg: {
-    width: LOGO,
-    height: LOGO,
   },
 });

@@ -6,6 +6,10 @@
  * when strict 12h has no commits) plus v4.0 features staged for this APK.
  */
 export const RELEASE_NOTES_LINES: string[] = [
+  'Release 4.3.8: three improvements from Linear LEE-61 through LEE-63 are now included.',
+  'Welcome: the animated intro and login screen now use the same LeePool medallion.',
+  'Login: Russian is available in the language selector with its flag.',
+  'Bitcoin: hashrate now has its own mining dropdown with current difficulty, next adjustment, and remaining blocks.',
   'Release 4.3.5: five improvements from Linear LEE-55 through LEE-59 are now included.',
   'Books: replaced the duplicate metadata page field with Publisher and removed the translator field from adding books.',
   'Dashboard: the library value chart now uses real book value history from Supabase.',

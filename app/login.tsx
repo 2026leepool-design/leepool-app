@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -17,11 +16,13 @@ import { LoginIntroOverlay } from '@/components/LoginIntroOverlay';
 import { supabase } from '@/utils/supabase';
 import { syncNostrProfileAfterAuth } from '@/utils/nostrProfileSync';
 import { setCachedAccountPassword } from '@/utils/authPasswordSession';
+import { LeePoolMedallion } from '@/components/LeePoolMedallion';
 
 const LANGUAGES = [
   { code: 'tr', flag: '🇹🇷' },
   { code: 'en', flag: '🇺🇸' },
   { code: 'es', flag: '🇪🇸' },
+  { code: 'ru', flag: '🇷🇺' },
 ];
 
 function CyberInput({
@@ -212,13 +213,7 @@ export default function LoginScreen() {
             shadowRadius: 22,
             elevation: 8,
           }}>
-          <View style={{ width: 68, height: 68, borderRadius: 18, overflow: 'hidden' }}>
-            <Image
-              source={require('../assets/images/android-icon-foreground.png')}
-              style={{ width: 68, height: 68 }}
-              resizeMode="cover"
-            />
-          </View>
+          <LeePoolMedallion size={68} radius={18} />
         </TouchableOpacity>
         <Text
           style={{

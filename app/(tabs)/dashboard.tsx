@@ -38,6 +38,9 @@ type MempoolFees = {
   halfHourFee: number | null;
   hourFee: number | null;
   hashrate: number | null;
+  difficulty: number | null;
+  difficultyChange: number | null;
+  remainingBlocks: number | null;
 };
 
 function ProgressRing({ percent }: { percent: number }) {
@@ -158,8 +161,9 @@ export default function DashboardScreen() {
   const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('USD');
   const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
-  const [mempoolFees, setMempoolFees] = useState<MempoolFees>({ blockHeight: null, fastestFee: null, halfHourFee: null, hourFee: null, hashrate: null });
+  const [mempoolFees, setMempoolFees] = useState<MempoolFees>({ blockHeight: null, fastestFee: null, halfHourFee: null, hourFee: null, hashrate: null, difficulty: null, difficultyChange: null, remainingBlocks: null });
   const [mempoolMenuOpen, setMempoolMenuOpen] = useState(false);
+  const [miningMenuOpen, setMiningMenuOpen] = useState(false);
   const [progressCircle, setProgressCircle] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
 
@@ -183,16 +187,33 @@ export default function DashboardScreen() {
       fetch('https://mempool.space/api/blocks/tip/height').then((r) => r.ok ? r.text() : null),
       fetch('https://mempool.space/api/v1/fees/recommended').then((r) => r.ok ? r.json() : null),
       fetch('https://mempool.space/api/v1/mining/hashrate/3d').then((r) => r.ok ? r.json() : null),
-    ]).then(([height, fees, hashrateData]) => {
+      fetch('https://mempool.space/api/v1/mining/difficulty-adjustment').then((r) => r.ok ? r.json() : null),
+      fetch('https://mempool.space/api/blocks/tip/hash').then((r) => r.ok ? r.text() : null),
+    ]).then(async ([height, fees, hashrateData, difficultyData, tipHash]) => {
       if (cancelled) return;
       const value = fees as { fastestFee?: number; halfHourFee?: number; hourFee?: number } | null;
       const hashrateValue = hashrateData as { currentHashrate?: number; hashrate?: number } | null;
+      const difficultyValue = difficultyData as { difficulty?: number; difficultyChange?: number; remainingBlocks?: number } | null;
+      let tipBlock: { difficulty?: number } | null = null;
+      const hash = typeof tipHash === 'string' ? tipHash.trim() : '';
+      if (hash) {
+        try {
+          const response = await fetch(`https://mempool.space/api/block/${hash}`);
+          if (response.ok) tipBlock = await response.json() as { difficulty?: number };
+        } catch {
+          /* mining data remains usable if the tip block is temporarily unavailable */
+        }
+      }
+      if (cancelled) return;
       setMempoolFees({
         blockHeight: height ? Number(height) : null,
         fastestFee: value?.fastestFee ?? null,
         halfHourFee: value?.halfHourFee ?? null,
         hourFee: value?.hourFee ?? null,
         hashrate: hashrateValue?.currentHashrate ?? hashrateValue?.hashrate ?? null,
+        difficulty: tipBlock?.difficulty ?? difficultyValue?.difficulty ?? null,
+        difficultyChange: difficultyValue?.difficultyChange ?? null,
+        remainingBlocks: difficultyValue?.remainingBlocks ?? null,
       });
     }).catch(() => undefined);
     return () => { cancelled = true; };
@@ -819,6 +840,23 @@ export default function DashboardScreen() {
         </View>
 
         <View className="mb-4 flex-row items-start justify-end gap-2">
+          <View className="items-start">
+          <TouchableOpacity onPress={() => setMiningMenuOpen((v) => !v)} className="flex-row items-center gap-1 rounded-xl px-3 py-2" style={{ backgroundColor: '#131B2B', borderWidth: 1, borderColor: miningMenuOpen ? '#00E5FF' : 'rgba(0,229,255,0.3)' }} accessibilityLabel="Mining information">
+            <Ionicons name="hammer-outline" size={15} color="#00E5FF" />
+            <Text className="text-[#00E5FF] text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+              {mempoolFees.hashrate ? `${(mempoolFees.hashrate / 1e18).toFixed(0)} EH/s` : '— EH/s'}
+            </Text>
+            <Ionicons name={miningMenuOpen ? 'chevron-up' : 'chevron-down'} size={12} color="#8892B0" />
+          </TouchableOpacity>
+          {miningMenuOpen ? (
+            <View className="rounded-xl p-2 mt-2" style={{ width: 190, backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(0,229,255,0.35)' }}>
+              <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>⛏️ Hashrate: {mempoolFees.hashrate ? `${(mempoolFees.hashrate / 1e18).toFixed(2)} EH/s` : '—'}</Text>
+              <Text className="text-white text-xs mt-1" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>Dificultad: {mempoolFees.difficulty ? `${(mempoolFees.difficulty / 1e12).toFixed(0)} T` : '—'}</Text>
+              <Text className="text-white text-xs mt-1" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>Próximo ajuste: {mempoolFees.difficultyChange == null ? '—' : `${mempoolFees.difficultyChange >= 0 ? '+' : ''}${mempoolFees.difficultyChange.toFixed(2)}%`}</Text>
+              <Text className="text-white text-xs mt-1" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>Bloques restantes: {mempoolFees.remainingBlocks ?? '—'}</Text>
+            </View>
+          ) : null}
+          </View>
           <View className="items-end">
           <TouchableOpacity onPress={() => setMempoolMenuOpen((v) => !v)} className="flex-row items-center gap-1 rounded-xl px-3 py-2" style={{ backgroundColor: '#131B2B', borderWidth: 1, borderColor: 'rgba(255,170,0,0.3)' }}>
             <Ionicons name="pulse-outline" size={15} color="#FFAA00" />
@@ -833,7 +871,6 @@ export default function DashboardScreen() {
               <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>Rápida: {mempoolFees.fastestFee ?? '—'}</Text>
               <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>30 min: {mempoolFees.halfHourFee ?? '—'}</Text>
               <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>1 h: {mempoolFees.hourFee ?? '—'}</Text>
-              <Text className="text-white text-xs mt-1" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>{t('hashrate')}: {mempoolFees.hashrate ? `${(mempoolFees.hashrate / 1e18).toFixed(2)} EH/s` : '—'}</Text>
             </View>
           ) : null}
           </View>

@@ -2,7 +2,7 @@
   "expo": {
     "name": "LeePool",
     "slug": "LeePool",
-    "version": "4.3.5",
+    "version": "4.3.8",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "leepool",
