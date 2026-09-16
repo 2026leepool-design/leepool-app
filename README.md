@@ -7,7 +7,7 @@ La aplicación combina seguimiento de lectura, progreso por páginas, biblioteca
 ## Última versión
 
 **Versión:** `4.3.5`
-**Estado:** última versión en publicación
+**Estado:** última versión publicada
 **Plataformas:** web y Android
 
 | Plataforma | Acceso | Estado |
